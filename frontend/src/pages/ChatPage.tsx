@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import { useChatStore } from '../store/chatStore'
 import { useEncryptionStore } from '../store/encryptionStore'
-import { usersApi } from '../services/api'
+import { usersApi, encryptedFilesApi } from '../services/api'
+import { cryptoService, base64ToUint8Array } from '../services/crypto'
 import wsService from '../services/websocket'
 import { format } from 'date-fns'
-import { Send, Plus, LogOut, Search, MessageCircle, X, User, Lock, Unlock, ArrowLeft } from 'lucide-react'
+import { Send, Plus, LogOut, Search, MessageCircle, X, User, Lock, Unlock, ArrowLeft, Paperclip, FileIcon, Image, Music, Download } from 'lucide-react'
 
 // Emoji avatars based on user id hash
 const AVATAR_EMOJIS = ['🦊', '🐼', '🦁', '🐯', '🐻', '🐨', '🐸', '🐵', '🦄', '🐲', '🦋', '🌸', '🌺', '🌻', '🍀', '⭐', '🌙', '🔥', '💎', '🎯', '🎨', '🎭', '🎪', '🎬', '🎤', '🎸', '🎹', '🎺', '🥁', '🎮']
@@ -33,6 +34,7 @@ export default function ChatPage() {
     loadChats,
     selectChat,
     sendMessage,
+    sendFile,
     createChat,
     setupWebSocket,
   } = useChatStore()
@@ -43,7 +45,9 @@ export default function ChatPage() {
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [typingTimeout, setTypingTimeout] = useState<NodeJS.Timeout | null>(null)
   const [showSidebar, setShowSidebar] = useState(true)
+  const [isUploading, setIsUploading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     loadUser()
@@ -158,6 +162,121 @@ export default function ChatPage() {
   }
 
   const typingInCurrentChat = currentChatId ? typingUsers[currentChatId] || [] : []
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setIsUploading(true)
+    try {
+      await sendFile(file)
+    } catch (error) {
+      console.error('Failed to send file:', error)
+    } finally {
+      setIsUploading(false)
+      // Reset input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+
+  const handleDownloadFile = async (fileId: string, filename: string) => {
+    try {
+      // Get file info (includes decryption keys for current user)
+      const { data: fileInfo } = await encryptedFilesApi.getInfo(fileId)
+
+      // Download encrypted blob
+      const { data: encryptedData } = await encryptedFilesApi.download(fileId)
+
+      // Get current user's secret key for decryption
+      const encryptionStore = useEncryptionStore.getState()
+      if (!encryptionStore.identityKeyPair) {
+        throw new Error('Encryption not initialized')
+      }
+
+      // Decrypt the file
+      const encryptedFile = new Uint8Array(encryptedData)
+      const fileNonce = base64ToUint8Array(fileInfo.file_nonce)
+      const encryptedKey = base64ToUint8Array(fileInfo.encrypted_key)
+      const keyNonce = base64ToUint8Array(fileInfo.key_nonce)
+      const ephemeralPublicKey = base64ToUint8Array(fileInfo.ephemeral_public_key)
+
+      const decryptedFile = cryptoService.decryptFile(
+        encryptedFile,
+        fileNonce,
+        encryptedKey,
+        keyNonce,
+        ephemeralPublicKey,
+        encryptionStore.identityKeyPair.secretKey
+      )
+
+      // Create blob and download
+      const blob = new Blob([decryptedFile], { type: fileInfo.content_type })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Failed to download/decrypt file:', error)
+      alert('Failed to decrypt file')
+    }
+  }
+
+  const renderFileMessage = (msg: typeof messages[0]) => {
+    // If we have encrypted_file info, show it with download option
+    if (msg.encrypted_file) {
+      const { file_type, original_filename, id } = msg.encrypted_file
+      const isImage = file_type === 'image'
+      const isAudio = file_type === 'voice'
+
+      return (
+        <div
+          className="file-message"
+          onClick={() => handleDownloadFile(id, original_filename)}
+          style={{ cursor: 'pointer' }}
+        >
+          {isImage ? <Image size={24} /> : isAudio ? <Music size={24} /> : <FileIcon size={24} />}
+          <span>{original_filename}</span>
+          <Download size={16} style={{ marginLeft: 'auto' }} />
+        </div>
+      )
+    }
+
+    // If we only have encrypted_file_id, show a loading/fetch button
+    if (msg.encrypted_file_id) {
+      return (
+        <div
+          className="file-message"
+          onClick={async () => {
+            try {
+              const { data: fileInfo } = await encryptedFilesApi.getInfo(msg.encrypted_file_id!)
+              handleDownloadFile(fileInfo.id, fileInfo.original_filename)
+            } catch (error) {
+              console.error('Failed to get file info:', error)
+            }
+          }}
+          style={{ cursor: 'pointer' }}
+        >
+          <FileIcon size={24} />
+          <span>Encrypted file</span>
+          <Download size={16} style={{ marginLeft: 'auto' }} />
+        </div>
+      )
+    }
+
+    // Fallback: old-style file message
+    return (
+      <div className="file-message">
+        <FileIcon size={24} />
+        <span>{msg.content}</span>
+      </div>
+    )
+  }
 
   return (
     <div className="chat-layout">
@@ -280,6 +399,8 @@ export default function ChatPage() {
                   <div className="message-bubble">
                     {msg.is_deleted ? (
                       <em style={{ opacity: 0.5 }}>Message deleted</em>
+                    ) : msg.encrypted_file || msg.encrypted_file_id || msg.message_type === 'image' || msg.message_type === 'file' || msg.message_type === 'voice' ? (
+                      renderFileMessage(msg)
                     ) : (
                       msg.content
                     )}
@@ -299,20 +420,36 @@ export default function ChatPage() {
 
             <div className="message-input-container">
               <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileSelect}
+                style={{ display: 'none' }}
+                accept="image/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.txt"
+              />
+              <button
+                className="icon-btn attach-btn"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                title="Attach file"
+              >
+                <Paperclip size={20} />
+              </button>
+              <input
                 type="text"
                 className="message-input"
-                placeholder="Type a message..."
+                placeholder={isUploading ? "Uploading..." : "Type a message..."}
                 value={messageText}
                 onChange={(e) => {
                   setMessageText(e.target.value)
                   handleTyping()
                 }}
                 onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                disabled={isUploading}
               />
               <button
                 className="send-btn"
                 onClick={handleSend}
-                disabled={!messageText.trim()}
+                disabled={!messageText.trim() || isUploading}
               >
                 <Send size={20} />
               </button>

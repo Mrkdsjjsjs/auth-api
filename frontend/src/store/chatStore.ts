@@ -1,7 +1,8 @@
 import { create } from 'zustand'
-import { chatsApi, messagesApi } from '../services/api'
+import { chatsApi, messagesApi, encryptedFilesApi } from '../services/api'
 import wsService from '../services/websocket'
 import { useEncryptionStore } from './encryptionStore'
+import { cryptoService, uint8ArrayToBase64 } from '../services/crypto'
 
 interface User {
   id: string
@@ -25,6 +26,21 @@ interface Message {
   encrypted_content?: string | null
   ephemeral_public_key?: string | null
   encryption_version?: number
+  // File fields
+  file_id?: string | null
+  file_url?: string | null
+  encrypted_file_id?: string | null
+  // Encrypted file metadata (for decryption)
+  encrypted_file?: {
+    id: string
+    original_filename: string
+    content_type: string
+    file_type: string
+    file_nonce: string
+    encrypted_key: string
+    key_nonce: string
+    ephemeral_public_key: string
+  } | null
 }
 
 interface LastMessage {
@@ -55,6 +71,7 @@ interface ChatState {
   loadChats: () => Promise<void>
   selectChat: (chatId: string) => Promise<void>
   sendMessage: (content: string) => Promise<void>
+  sendFile: (file: File) => Promise<void>
   createChat: (userId: string) => Promise<string>
   setupWebSocket: () => void
 }
@@ -220,6 +237,156 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch (error) {
       console.error('Failed to send message:', error)
       // Remove optimistic message on error
+      set((state) => ({
+        messages: state.messages.filter((m) => m.id !== tempId),
+      }))
+    }
+  },
+
+  sendFile: async (file: File) => {
+    const { currentChatId, messages, chats } = get()
+    if (!currentChatId) return
+
+    // Get current user from authStore
+    const authStore = (await import('./authStore')).useAuthStore.getState()
+    const currentUser = authStore.user
+    if (!currentUser) return
+
+    // Get recipient user ID (other member in chat)
+    const currentChat = chats.find(c => c.id === currentChatId)
+    const recipientMember = currentChat?.members.find(m => m.user_id !== currentUser.id)
+    const recipientUserId = recipientMember?.user_id
+    if (!recipientUserId) {
+      console.error('No recipient found in chat')
+      return
+    }
+
+    // Determine message type
+    const isImage = file.type.startsWith('image/')
+    const isAudio = file.type.startsWith('audio/')
+    const messageType = isImage ? 'image' : isAudio ? 'voice' : 'file'
+
+    // Create optimistic message
+    const tempId = `temp-${Date.now()}`
+    const optimisticMessage: Message = {
+      id: tempId,
+      chat_id: currentChatId,
+      sender_id: currentUser.id,
+      content: `Uploading ${file.name}...`,
+      message_type: messageType,
+      is_edited: false,
+      is_deleted: false,
+      created_at: new Date().toISOString(),
+      sender: {
+        id: currentUser.id,
+        username: currentUser.username,
+        display_name: currentUser.display_name,
+        avatar_url: currentUser.avatar_url,
+      },
+    }
+
+    set({ messages: [...messages, optimisticMessage] })
+
+    try {
+      // Read file as ArrayBuffer
+      const fileData = new Uint8Array(await file.arrayBuffer())
+
+      // Get public keys for encryption
+      const encryptionStore = (await import('./encryptionStore')).useEncryptionStore.getState()
+
+      // Get recipient public key
+      const recipientKeyResp = await encryptionStore.getRecipientPublicKey(recipientUserId)
+      if (!recipientKeyResp) {
+        throw new Error('Failed to get recipient public key')
+      }
+
+      // Get sender (self) public key
+      const senderKeyResp = await encryptionStore.getRecipientPublicKey(currentUser.id)
+      if (!senderKeyResp) {
+        throw new Error('Failed to get sender public key')
+      }
+
+      // Convert base64 keys to Uint8Array
+      const { base64ToUint8Array } = await import('../services/crypto')
+      const recipientPublicKey = base64ToUint8Array(recipientKeyResp)
+      const senderPublicKey = base64ToUint8Array(senderKeyResp)
+
+      // Encrypt file for both recipient and sender
+      const encryptedResult = cryptoService.encryptFileForBoth(
+        fileData,
+        recipientPublicKey,
+        senderPublicKey
+      )
+
+      // Convert encrypted file to base64 for upload
+      const encryptedDataBase64 = uint8ArrayToBase64(encryptedResult.encryptedFile)
+
+      // Upload encrypted file
+      const { data: uploadResponse } = await encryptedFilesApi.upload({
+        encrypted_data: encryptedDataBase64,
+        original_filename: file.name,
+        content_type: file.type,
+        file_nonce: encryptedResult.fileNonce,
+        key_for_recipient: encryptedResult.keyForRecipient,
+        key_for_sender: encryptedResult.keyForSender,
+        recipient_user_id: recipientUserId,
+        chat_id: currentChatId,
+      })
+
+      // Now send a message with the file reference
+      // Encrypt message content (filename) for both users
+      const messageContent = `[File: ${file.name}]`
+      const encryptedForRecipient = await encryptionStore.encryptMessage(messageContent, recipientUserId)
+      const encryptedForSelf = await encryptionStore.encryptMessage(messageContent, currentUser.id)
+
+      // Send message with encrypted_file_id
+      const { data: messageData } = await messagesApi.sendE2E(currentChatId, messageContent, {
+        encrypted_for_recipient: encryptedForRecipient,
+        encrypted_for_sender: encryptedForSelf,
+        recipient_user_id: recipientUserId,
+        encrypted_file_id: uploadResponse.file.id,
+        message_type: messageType,
+      })
+
+      // Update message with real data
+      // The message now contains the encrypted file info
+      set((state) => ({
+        messages: state.messages.map((m) =>
+          m.id === tempId
+            ? {
+                ...m,
+                id: messageData.id,
+                content: messageContent,
+                message_type: messageType,
+                encrypted_file_id: uploadResponse.file.id,
+                encrypted_file: messageData.encrypted_file || uploadResponse.file,
+              }
+            : m
+        ),
+        chats: [...state.chats]
+          .map((c) =>
+            c.id === currentChatId
+              ? {
+                  ...c,
+                  last_message_at: new Date().toISOString(),
+                  last_message: {
+                    id: messageData.id,
+                    content: messageContent,
+                    sender_id: currentUser.id,
+                    created_at: new Date().toISOString(),
+                  },
+                }
+              : c
+          )
+          .sort((a, b) => {
+            const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0
+            const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0
+            return bTime - aTime
+          }),
+      }))
+    } catch (error) {
+      console.error('Failed to send file:', error)
+      // Remove optimistic message and show error
       set((state) => ({
         messages: state.messages.filter((m) => m.id !== tempId),
       }))

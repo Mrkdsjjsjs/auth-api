@@ -3,6 +3,7 @@ from app.models.chat import Chat, ChatMember
 from app.models.message import Message
 from app.models.file import File
 from app.models.encryption import UserKey, EncryptedPrivateKeyBackup, ChatEncryptionKey
+from app.models.encrypted_file import EncryptedFile
 
 __all__ = [
     "User",
@@ -13,4 +14,5 @@ __all__ = [
     "UserKey",
     "EncryptedPrivateKeyBackup",
     "ChatEncryptionKey",
+    "EncryptedFile",
 ]

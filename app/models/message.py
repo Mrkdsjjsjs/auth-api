@@ -33,3 +33,5 @@ class Message(SQLModel, table=True):
     encrypted_for_sender: Optional[str] = Field(default=None)
     ephemeral_key_for_sender: Optional[str] = Field(default=None)
     sender_key_id: Optional[str] = Field(default=None)
+    # E2E encrypted file reference
+    encrypted_file_id: Optional[str] = Field(default=None, foreign_key="encryptedfile.id")

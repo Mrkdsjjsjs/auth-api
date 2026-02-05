@@ -94,12 +94,16 @@ export const messagesApi = {
     encrypted_for_recipient: { encrypted_content: string; ephemeral_public_key: string } | null
     encrypted_for_sender: { encrypted_content: string; ephemeral_public_key: string } | null
     recipient_user_id: string | undefined
+    encrypted_file_id?: string
+    message_type?: string
   }) =>
     api.post(`/api/chats/${chatId}/messages`, {
       content: null,  // No plaintext stored
       encrypted_for_recipient: encryption.encrypted_for_recipient,
       encrypted_for_sender: encryption.encrypted_for_sender,
       recipient_user_id: encryption.recipient_user_id,
+      encrypted_file_id: encryption.encrypted_file_id,
+      message_type: encryption.message_type || 'text',
     }),
   edit: (messageId: string, content: string) =>
     api.put(`/api/messages/${messageId}`, { content }),
@@ -117,6 +121,33 @@ export const keysApi = {
   saveBackup: (data: { encrypted_blob: string; salt: string }) =>
     api.post('/api/keys/backup', data),
   getBackup: () => api.get('/api/keys/backup'),
+}
+
+// Encrypted Files - E2E encrypted file storage
+export const encryptedFilesApi = {
+  upload: (data: {
+    encrypted_data: string
+    original_filename: string
+    content_type: string
+    file_nonce: string
+    key_for_recipient: {
+      encrypted_key: string
+      key_nonce: string
+      ephemeral_public_key: string
+    }
+    key_for_sender: {
+      encrypted_key: string
+      key_nonce: string
+      ephemeral_public_key: string
+    }
+    recipient_user_id: string
+    chat_id: string
+  }) => api.post('/api/encrypted-files/upload', data),
+
+  getInfo: (fileId: string) => api.get(`/api/encrypted-files/${fileId}`),
+
+  download: (fileId: string) =>
+    api.get(`/api/encrypted-files/${fileId}/download`, { responseType: 'arraybuffer' }),
 }
 
 export default api

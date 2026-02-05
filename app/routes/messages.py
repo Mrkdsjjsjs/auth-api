@@ -6,6 +6,7 @@ from app.database import get_session
 from app.models.user import User
 from app.models.chat import Chat, ChatMember
 from app.models.message import Message
+from app.models.encrypted_file import EncryptedFile
 from app.models.encryption import UserKey
 from app.schemas.message import (
     MessageCreate, MessageUpdate, MessageResponse, MessageListResponse
@@ -42,6 +43,7 @@ def build_message_response(message: Message, session: Session, encrypt_for_user_
         "message_type": message.message_type,
         "file_url": message.file_url if not message.is_deleted else None,
         "file_id": message.file_id,
+        "encrypted_file_id": message.encrypted_file_id,
         "reply_to_id": message.reply_to_id,
         "is_edited": message.is_edited,
         "is_deleted": message.is_deleted,
@@ -50,7 +52,24 @@ def build_message_response(message: Message, session: Session, encrypt_for_user_
         "encrypted_content": None,
         "ephemeral_public_key": None,
         "encryption_version": 0,
+        "encrypted_file": None,
     }
+
+    # Add encrypted file info if present
+    if message.encrypted_file_id and not message.is_deleted and encrypt_for_user_id:
+        enc_file = session.get(EncryptedFile, message.encrypted_file_id)
+        if enc_file:
+            is_sender = enc_file.uploaded_by == encrypt_for_user_id
+            response["encrypted_file"] = {
+                "id": enc_file.id,
+                "original_filename": enc_file.original_filename,
+                "content_type": enc_file.content_type,
+                "file_type": enc_file.file_type.value,
+                "file_nonce": enc_file.file_nonce,
+                "encrypted_key": enc_file.encrypted_key_sender if is_sender else enc_file.encrypted_key_recipient,
+                "key_nonce": enc_file.key_nonce_sender if is_sender else enc_file.key_nonce_recipient,
+                "ephemeral_public_key": enc_file.ephemeral_key_sender if is_sender else enc_file.ephemeral_key_recipient,
+            }
 
     # E2E encrypted message - return correct version for each user
     if message.encryption_version > 0:
@@ -85,7 +104,7 @@ def build_message_response(message: Message, session: Session, encrypt_for_user_
     })
 def get_messages(
     chat_id: str,
-    limit: int = Query(default=50, le=100),
+    limit: int = Query(default=500, le=1000),
     before: Optional[str] = None,
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
@@ -188,6 +207,7 @@ async def send_message(
         content=data.content if not is_e2e else None,  # No plaintext if E2E
         message_type=data.message_type,
         file_id=data.file_id,
+        encrypted_file_id=data.encrypted_file_id,  # E2E encrypted file
         file_url=file_url,
         reply_to_id=data.reply_to_id,
         # E2E encryption
@@ -366,7 +386,7 @@ async def mark_read(
 def search_messages(
     q: str,
     chat_id: Optional[str] = None,
-    limit: int = Query(default=50, le=100),
+    limit: int = Query(default=500, le=1000),
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
 ):

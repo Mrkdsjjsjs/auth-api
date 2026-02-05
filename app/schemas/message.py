@@ -15,6 +15,7 @@ class MessageCreate(BaseModel):
     content: Optional[str] = None  # Plaintext fallback (only if encryption fails)
     message_type: MessageType = MessageType.text
     file_id: Optional[str] = None
+    encrypted_file_id: Optional[str] = None  # E2E encrypted file
     reply_to_id: Optional[str] = None
     # E2E encryption - separate payload for each user
     encrypted_for_recipient: Optional[EncryptedPayload] = None
@@ -24,6 +25,18 @@ class MessageCreate(BaseModel):
 
 class MessageUpdate(BaseModel):
     content: str
+
+
+class EncryptedFileInfo(BaseModel):
+    """Info about an encrypted file attached to a message"""
+    id: str
+    original_filename: str
+    content_type: str
+    file_type: str
+    file_nonce: str
+    encrypted_key: str
+    key_nonce: str
+    ephemeral_public_key: str
 
 
 class MessageResponse(BaseModel):
@@ -37,6 +50,7 @@ class MessageResponse(BaseModel):
     message_type: MessageType
     file_url: Optional[str] = None
     file_id: Optional[str] = None
+    encrypted_file_id: Optional[str] = None
     reply_to_id: Optional[str] = None
     is_edited: bool
     is_deleted: bool
@@ -46,6 +60,8 @@ class MessageResponse(BaseModel):
     encrypted_content: Optional[str] = None
     ephemeral_public_key: Optional[str] = None
     encryption_version: int = 0
+    # Encrypted file info (if message has encrypted file)
+    encrypted_file: Optional[EncryptedFileInfo] = None
 
 
 class MessageListResponse(BaseModel):
