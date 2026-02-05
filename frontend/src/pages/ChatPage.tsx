@@ -401,10 +401,24 @@ export default function ChatPage() {
               >
                 <ArrowLeft size={20} />
               </button>
-              <div className="chat-avatar emoji-avatar" style={{ width: 40, height: 40 }}>
+              <div
+                className="chat-avatar emoji-avatar clickable"
+                style={{ width: 40, height: 40, cursor: 'pointer' }}
+                onClick={() => {
+                  const otherUser = getOtherUser(currentChat)
+                  if (otherUser) navigate(`/user/${otherUser.id}`)
+                }}
+              >
                 {renderAvatar(getChatAvatar(currentChat), getOtherUser(currentChat)?.id || currentChat.id)}
               </div>
-              <div className="chat-header-info">
+              <div
+                className="chat-header-info"
+                style={{ cursor: 'pointer' }}
+                onClick={() => {
+                  const otherUser = getOtherUser(currentChat)
+                  if (otherUser) navigate(`/user/${otherUser.id}`)
+                }}
+              >
                 <div className="chat-header-name">{getChatName(currentChat)}</div>
                 <div
                   className={`chat-header-status ${
