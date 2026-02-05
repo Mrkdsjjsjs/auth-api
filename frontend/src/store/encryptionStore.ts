@@ -165,8 +165,7 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
       const recipientPublicKey = base64ToUint8Array(recipientPublicKeyB64)
       const encrypted = cryptoService.encryptForRecipient(
         plaintext,
-        recipientPublicKey,
-        identityKeyPair.secretKey
+        recipientPublicKey
       )
 
       return {

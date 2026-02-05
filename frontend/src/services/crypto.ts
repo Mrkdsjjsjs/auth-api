@@ -51,8 +51,7 @@ export class CryptoService {
    */
   encryptForRecipient(
     plaintext: string,
-    recipientPublicKey: Uint8Array,
-    senderSecretKey: Uint8Array
+    recipientPublicKey: Uint8Array
   ): { ciphertext: string; nonce: string; ephemeralPublicKey: string } {
     // Generate ephemeral key pair for this message
     const ephemeralKeyPair = nacl.box.keyPair()
