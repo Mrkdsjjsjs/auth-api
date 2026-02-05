@@ -14,7 +14,6 @@ interface EncryptionState {
   currentKeyId: string | null
   identityKeyPair: IdentityKeyPair | null
 
-  // Actions
   initialize: () => Promise<void>
   generateKeys: () => Promise<void>
   decryptMessage: (message: {
@@ -30,18 +29,18 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
   currentKeyId: null,
   identityKeyPair: null,
 
-  /**
-   * Initialize encryption with existing keys from IndexedDB
-   * No password needed - keys are stored unencrypted
-   */
   initialize: async () => {
+    console.log('[Encryption] Starting initialization...')
     try {
       const hasKeys = await keyStorageService.hasStoredKeys()
+      console.log('[Encryption] hasStoredKeys:', hasKeys)
 
       if (hasKeys) {
         try {
+          console.log('[Encryption] Loading keys from IndexedDB...')
           const keyPair = await keyStorageService.loadKeys()
           const currentKeyId = await keyStorageService.getCurrentKeyId()
+          console.log('[Encryption] Keys loaded, keyId:', currentKeyId)
 
           set({
             isInitialized: true,
@@ -49,41 +48,37 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
             identityKeyPair: keyPair,
             currentKeyId,
           })
-          console.log('Encryption initialized from IndexedDB')
+          console.log('[Encryption] Initialized successfully from IndexedDB')
         } catch (loadError) {
-          // Old format keys - clear and regenerate
-          console.warn('Old key format detected, regenerating...', loadError)
+          console.warn('[Encryption] Failed to load keys, clearing and regenerating...', loadError)
           await keyStorageService.clearKeys()
           await get().generateKeys()
         }
       } else {
-        // No keys - generate new ones
-        console.log('No keys found, generating...')
+        console.log('[Encryption] No keys found, generating new ones...')
         await get().generateKeys()
       }
     } catch (error) {
-      console.error('Failed to initialize encryption:', error)
+      console.error('[Encryption] Initialize failed:', error)
       set({ isInitialized: false, hasKeys: false })
     }
   },
 
-  /**
-   * Generate new identity keys (on first login)
-   */
   generateKeys: async () => {
+    console.log('[Encryption] Generating new keys...')
     try {
-      // Generate new key pair
       const keyPair = cryptoService.generateIdentityKeyPair()
+      console.log('[Encryption] Key pair generated')
 
-      // Store locally in IndexedDB
       await keyStorageService.storeKeys(keyPair)
+      console.log('[Encryption] Keys stored in IndexedDB')
 
-      // Register public key with server
       const { data: registeredKey } = await keysApi.register({
         public_key: uint8ArrayToBase64(keyPair.publicKey),
         signature_public_key: uint8ArrayToBase64(keyPair.publicKey),
         key_type: 'identity',
       })
+      console.log('[Encryption] Keys registered on server, id:', registeredKey.id)
 
       await keyStorageService.setCurrentKeyId(registeredKey.id)
 
@@ -93,17 +88,13 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
         identityKeyPair: keyPair,
         currentKeyId: registeredKey.id,
       })
-
-      console.log('New encryption keys generated')
+      console.log('[Encryption] Keys generated and initialized successfully')
     } catch (error) {
-      console.error('Failed to generate keys:', error)
+      console.error('[Encryption] Failed to generate keys:', error)
       throw error
     }
   },
 
-  /**
-   * Decrypt a message encrypted by the server
-   */
   decryptMessage: async (message) => {
     const { identityKeyPair } = get()
 
@@ -115,7 +106,6 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
       throw new Error('Missing encryption data')
     }
 
-    // Parse encrypted content: "ciphertext:nonce"
     const [ciphertextB64, nonceB64] = message.encrypted_content.split(':')
     const ciphertext = base64ToUint8Array(ciphertextB64)
     const nonce = base64ToUint8Array(nonceB64)
@@ -129,11 +119,7 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
     )
   },
 
-  /**
-   * Clear encryption state (on logout)
-   */
   clearKeys: async () => {
-    // Don't clear IndexedDB - user might log back in
     set({
       isInitialized: false,
       hasKeys: false,
