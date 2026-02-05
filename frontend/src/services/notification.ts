@@ -85,8 +85,7 @@ class NotificationService {
         body,
         icon: '/favicon.ico',
         tag: 'new-message', // Prevents stacking multiple notifications
-        renotify: true,
-      })
+      } as NotificationOptions)
 
       if (onClick) {
         notification.onclick = () => {
