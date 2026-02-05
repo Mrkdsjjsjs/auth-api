@@ -7,7 +7,7 @@ import { usersApi, encryptedFilesApi } from '../services/api'
 import { cryptoService, base64ToUint8Array } from '../services/crypto'
 import wsService from '../services/websocket'
 import { format } from 'date-fns'
-import { Send, Plus, LogOut, Search, MessageCircle, X, User, Lock, Unlock, ArrowLeft, Paperclip, FileIcon, Image, Music, Download } from 'lucide-react'
+import { Send, Plus, LogOut, Search, MessageCircle, X, User, Lock, Unlock, ArrowLeft, Paperclip, FileIcon, Image, Music, Download, AtSign } from 'lucide-react'
 
 // Emoji avatars based on user id hash
 const AVATAR_EMOJIS = ['🦊', '🐼', '🦁', '🐯', '🐻', '🐨', '🐸', '🐵', '🦄', '🐲', '🦋', '🌸', '🌺', '🌻', '🍀', '⭐', '🌙', '🔥', '💎', '🎯', '🎨', '🎭', '🎪', '🎬', '🎤', '🎸', '🎹', '🎺', '🥁', '🎮']
@@ -49,6 +49,8 @@ export default function ChatPage() {
   const [typingTimeout, setTypingTimeout] = useState<NodeJS.Timeout | null>(null)
   const [showSidebar, setShowSidebar] = useState(true)
   const [isUploading, setIsUploading] = useState(false)
+  const [showUserProfile, setShowUserProfile] = useState(false)
+  const [profileUser, setProfileUser] = useState<any>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -139,6 +141,16 @@ export default function ChatPage() {
 
   const handleBackToList = () => {
     setShowSidebar(true)
+  }
+
+  const handleOpenProfile = async (userId: string) => {
+    try {
+      const { data } = await usersApi.getById(userId)
+      setProfileUser(data)
+      setShowUserProfile(true)
+    } catch (err) {
+      console.error('Failed to load profile:', err)
+    }
   }
 
   const handleSend = async () => {
@@ -406,7 +418,7 @@ export default function ChatPage() {
                 style={{ width: 40, height: 40, cursor: 'pointer' }}
                 onClick={() => {
                   const otherUser = getOtherUser(currentChat)
-                  if (otherUser) navigate(`/user/${otherUser.id}`)
+                  if (otherUser) handleOpenProfile(otherUser.id)
                 }}
               >
                 {renderAvatar(getChatAvatar(currentChat), getOtherUser(currentChat)?.id || currentChat.id)}
@@ -416,7 +428,7 @@ export default function ChatPage() {
                 style={{ cursor: 'pointer' }}
                 onClick={() => {
                   const otherUser = getOtherUser(currentChat)
-                  if (otherUser) navigate(`/user/${otherUser.id}`)
+                  if (otherUser) handleOpenProfile(otherUser.id)
                 }}
               >
                 <div className="chat-header-name">{getChatName(currentChat)}</div>
@@ -578,6 +590,56 @@ export default function ChatPage() {
               {searchQuery.length >= 2 && searchResults.length === 0 && (
                 <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: 20 }}>
                   No users found
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* User Profile Modal */}
+      {showUserProfile && profileUser && (
+        <div className="modal-overlay" onClick={() => setShowUserProfile(false)}>
+          <div className="modal profile-modal" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <h3 className="modal-title">Profile</h3>
+              <button className="icon-btn" onClick={() => setShowUserProfile(false)}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="profile-modal-content">
+              <div className="profile-modal-avatar emoji-avatar">
+                {profileUser.avatar_url?.startsWith('emoji:') ? (
+                  <span style={{ fontSize: 48 }}>{profileUser.avatar_url.slice(6)}</span>
+                ) : profileUser.avatar_url?.match(/\.(mp4|webm|mov)$/i) ? (
+                  <video src={profileUser.avatar_url} autoPlay loop muted playsInline className="avatar-img" />
+                ) : profileUser.avatar_url ? (
+                  <img src={profileUser.avatar_url} alt="" className="avatar-img" />
+                ) : (
+                  <span style={{ fontSize: 48 }}>{getEmojiAvatar(profileUser.id)}</span>
+                )}
+              </div>
+
+              <div className="profile-modal-name">
+                {profileUser.display_name || profileUser.username || 'Anonymous'}
+              </div>
+
+              {profileUser.username && (
+                <div className="profile-modal-username">
+                  <AtSign size={14} />
+                  {profileUser.username}
+                </div>
+              )}
+
+              <div className={`profile-modal-status ${profileUser.is_online ? 'online' : ''}`}>
+                {profileUser.is_online ? 'Online' : 'Offline'}
+              </div>
+
+              {profileUser.bio && (
+                <div className="profile-modal-bio">
+                  <label>Bio</label>
+                  <div className="bio-text">{profileUser.bio}</div>
                 </div>
               )}
             </div>
