@@ -7,27 +7,11 @@ import ChatPage from './pages/ChatPage'
 import ProfilePage from './pages/ProfilePage'
 
 function App() {
-  const { isAuthenticated, isLoading, loadUser } = useAuthStore()
+  const { isAuthenticated, loadUser } = useAuthStore()
 
   useEffect(() => {
     loadUser()
   }, [])
-
-  // Show loading while checking auth status
-  if (isLoading) {
-    return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100vh',
-        background: 'var(--bg-primary)',
-        color: 'var(--text-primary)'
-      }}>
-        Loading...
-      </div>
-    )
-  }
 
   return (
     <Routes>
