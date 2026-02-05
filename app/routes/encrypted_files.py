@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
 from sqlmodel import Session, select
 from pathlib import Path
+from urllib.parse import quote
 import base64
 import uuid
 import aiofiles
@@ -264,10 +265,13 @@ async def download_encrypted_file(
         encrypted_data = await f.read()
 
     # Return raw encrypted bytes
+    # Use RFC 5987 for non-ASCII filenames
+    filename = encrypted_file.original_filename
+    filename_encoded = quote(filename)
     return Response(
         content=encrypted_data,
         media_type="application/octet-stream",
         headers={
-            "Content-Disposition": f'attachment; filename="{encrypted_file.original_filename}.enc"'
+            "Content-Disposition": f"attachment; filename*=UTF-8''{filename_encoded}.enc"
         }
     )

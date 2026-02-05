@@ -67,9 +67,12 @@ interface ChatState {
   messages: Message[]
   typingUsers: { [chatId: string]: string[] }
   isLoading: boolean
+  isLoadingMore: boolean
+  hasMoreMessages: boolean
 
   loadChats: () => Promise<void>
   selectChat: (chatId: string) => Promise<void>
+  loadMoreMessages: () => Promise<void>
   sendMessage: (content: string) => Promise<void>
   sendFile: (file: File) => Promise<void>
   createChat: (userId: string) => Promise<string>
@@ -104,12 +107,17 @@ async function decryptMessage(message: Message): Promise<Message> {
   }
 }
 
+// Track pending message IDs to avoid duplicates
+const pendingMessageIds = new Set<string>()
+
 export const useChatStore = create<ChatState>((set, get) => ({
   chats: [],
   currentChatId: null,
   messages: [],
   typingUsers: {},
   isLoading: false,
+  isLoadingMore: false,
+  hasMoreMessages: true,
 
   loadChats: async () => {
     try {
@@ -121,7 +129,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   selectChat: async (chatId) => {
-    set({ currentChatId: chatId, messages: [], isLoading: true })
+    set({ currentChatId: chatId, messages: [], isLoading: true, hasMoreMessages: true })
 
     try {
       const { data } = await messagesApi.list(chatId)
@@ -131,7 +139,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
         data.messages.map((msg: Message) => decryptMessage(msg))
       )
 
-      set({ messages: decryptedMessages, isLoading: false })
+      set({
+        messages: decryptedMessages,
+        isLoading: false,
+        hasMoreMessages: data.has_more || false
+      })
 
       // Mark last message as read
       if (data.messages.length > 0) {
@@ -148,6 +160,39 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch (error) {
       console.error('Failed to load messages:', error)
       set({ isLoading: false })
+    }
+  },
+
+  loadMoreMessages: async () => {
+    const { currentChatId, messages, isLoadingMore, hasMoreMessages } = get()
+    if (!currentChatId || isLoadingMore || !hasMoreMessages || messages.length === 0) return
+
+    set({ isLoadingMore: true })
+
+    try {
+      // Get the oldest message ID as cursor
+      const oldestMessage = messages[0]
+      const { data } = await messagesApi.list(currentChatId, oldestMessage.id)
+
+      if (data.messages.length === 0) {
+        set({ isLoadingMore: false, hasMoreMessages: false })
+        return
+      }
+
+      // Decrypt new messages
+      const decryptedMessages = await Promise.all(
+        data.messages.map((msg: Message) => decryptMessage(msg))
+      )
+
+      // Prepend older messages
+      set((state) => ({
+        messages: [...decryptedMessages, ...state.messages],
+        isLoadingMore: false,
+        hasMoreMessages: data.has_more || false
+      }))
+    } catch (error) {
+      console.error('Failed to load more messages:', error)
+      set({ isLoadingMore: false })
     }
   },
 
@@ -208,7 +253,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
         recipient_user_id: recipientUserId,
       })
 
-      // Replace temp message with real one (or remove if it comes via WebSocket)
+      // Track this message ID to avoid duplicates from WebSocket
+      pendingMessageIds.add(data.id)
+      setTimeout(() => pendingMessageIds.delete(data.id), 5000) // Clean up after 5s
+
+      // Replace temp message with real one
       set((state) => ({
         messages: state.messages.map((m) =>
           m.id === tempId ? { ...optimisticMessage, id: data.id } : m
@@ -356,8 +405,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
         message_type: messageType,
       })
 
+      // Track this message ID to avoid duplicates from WebSocket
+      pendingMessageIds.add(messageData.id)
+      setTimeout(() => pendingMessageIds.delete(messageData.id), 5000) // Clean up after 5s
+
       // Update message with real data
-      // The message now contains the encrypted file info
       set((state) => ({
         messages: state.messages.map((m) =>
           m.id === tempId
@@ -438,13 +490,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
         if (decryptedMessage.chat_id === currentChatId) {
           console.log('[WS] Message is for current chat')
-          // Check if message already exists (avoid duplicates) - use fresh state
+
+          // Check if this message was just sent by us (pending)
+          if (pendingMessageIds.has(decryptedMessage.id)) {
+            console.log('[WS] Message is pending (just sent), skipping')
+            pendingMessageIds.delete(decryptedMessage.id)
+            return
+          }
+
+          // Check if message already exists (avoid duplicates)
           const existsById = messages.some(m => m.id === decryptedMessage.id)
+
           // Also check for temp messages we added optimistically
           const tempMessage = messages.find(m =>
             m.id.startsWith('temp-') &&
-            m.sender_id === decryptedMessage.sender_id &&
-            m.content === decryptedMessage.content
+            m.sender_id === decryptedMessage.sender_id
           )
 
           if (tempMessage) {
@@ -458,10 +518,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
           } else if (!existsById) {
             console.log('[WS] Adding new message to state')
             set((state) => {
-              console.log('[WS] Current messages count:', state.messages.length)
-              const newMessages = [...state.messages, decryptedMessage]
-              console.log('[WS] New messages count:', newMessages.length)
-              return { messages: newMessages }
+              // Double check it doesn't exist
+              if (state.messages.some(m => m.id === decryptedMessage.id)) {
+                return state
+              }
+              return { messages: [...state.messages, decryptedMessage] }
             })
           } else {
             console.log('[WS] Message already exists, skipping')

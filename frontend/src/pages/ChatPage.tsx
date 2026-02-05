@@ -31,8 +31,11 @@ export default function ChatPage() {
     currentChatId,
     messages,
     typingUsers,
+    isLoadingMore,
+    hasMoreMessages,
     loadChats,
     selectChat,
+    loadMoreMessages,
     sendMessage,
     sendFile,
     createChat,
@@ -47,7 +50,9 @@ export default function ChatPage() {
   const [showSidebar, setShowSidebar] = useState(true)
   const [isUploading, setIsUploading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [shouldScrollToBottom, setShouldScrollToBottom] = useState(true)
 
   useEffect(() => {
     loadUser()
@@ -55,10 +60,39 @@ export default function ChatPage() {
     setupWebSocket()
   }, [])
 
-  // Auto-scroll to bottom when messages change
+  // Auto-scroll to bottom when new messages arrive (only if already at bottom)
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    if (shouldScrollToBottom) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [messages, shouldScrollToBottom])
+
+  // Reset scroll position when changing chats
+  useEffect(() => {
+    setShouldScrollToBottom(true)
+    messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
+  }, [currentChatId])
+
+  // Handle scroll for infinite scroll
+  const handleScroll = () => {
+    const container = messagesContainerRef.current
+    if (!container) return
+
+    // Check if scrolled to top (with 100px threshold)
+    if (container.scrollTop < 100 && hasMoreMessages && !isLoadingMore) {
+      // Save current scroll height to restore position after loading
+      const prevScrollHeight = container.scrollHeight
+      loadMoreMessages().then(() => {
+        // Restore scroll position after loading
+        const newScrollHeight = container.scrollHeight
+        container.scrollTop = newScrollHeight - prevScrollHeight
+      })
+    }
+
+    // Check if at bottom (for auto-scroll behavior)
+    const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100
+    setShouldScrollToBottom(isAtBottom)
+  }
 
   const currentChat = chats.find((c) => c.id === currentChatId)
 
@@ -392,7 +426,16 @@ export default function ChatPage() {
               </div>
             </div>
 
-            <div className="messages-container">
+            <div
+              className="messages-container"
+              ref={messagesContainerRef}
+              onScroll={handleScroll}
+            >
+              {isLoadingMore && (
+                <div style={{ textAlign: 'center', padding: '10px', color: 'var(--text-secondary)' }}>
+                  Loading...
+                </div>
+              )}
               {messages.map((msg) => (
                 <div
                   key={msg.id}
