@@ -1,10 +1,10 @@
 import { get, set, del } from 'idb-keyval'
-import { IdentityKeyPair, cryptoService } from './crypto'
+import { IdentityKeyPair, uint8ArrayToBase64, base64ToUint8Array } from './crypto'
 
 // Storage keys
 const KEYS_STORED_FLAG = 'encryption_keys_stored'
-const ENCRYPTED_KEYS_BLOB = 'encrypted_keys_blob'
-const ENCRYPTED_KEYS_SALT = 'encrypted_keys_salt'
+const PUBLIC_KEY = 'encryption_public_key'
+const SECRET_KEY = 'encryption_secret_key'
 const CURRENT_KEY_ID = 'current_key_id'
 
 export class KeyStorageService {
@@ -17,53 +17,37 @@ export class KeyStorageService {
   }
 
   /**
-   * Store encrypted identity keys in IndexedDB
+   * Store identity keys in IndexedDB (no password encryption for auto-init on page load)
    */
-  async storeKeys(keyPair: IdentityKeyPair, password: string): Promise<{ encryptedBlob: string; salt: string }> {
-    const { encryptedBlob, salt } = cryptoService.encryptKeyPairForStorage(keyPair, password)
-
-    await set(ENCRYPTED_KEYS_BLOB, encryptedBlob)
-    await set(ENCRYPTED_KEYS_SALT, salt)
+  async storeKeys(keyPair: IdentityKeyPair): Promise<void> {
+    await set(PUBLIC_KEY, uint8ArrayToBase64(keyPair.publicKey))
+    await set(SECRET_KEY, uint8ArrayToBase64(keyPair.secretKey))
     await set(KEYS_STORED_FLAG, true)
-
-    return { encryptedBlob, salt }
   }
 
   /**
-   * Load and decrypt identity keys from IndexedDB
+   * Load identity keys from IndexedDB
    */
-  async loadKeys(password: string): Promise<IdentityKeyPair> {
-    const encryptedBlob = await get(ENCRYPTED_KEYS_BLOB)
-    const salt = await get(ENCRYPTED_KEYS_SALT)
+  async loadKeys(): Promise<IdentityKeyPair> {
+    const publicKeyB64 = await get(PUBLIC_KEY)
+    const secretKeyB64 = await get(SECRET_KEY)
 
-    if (!encryptedBlob || !salt) {
+    if (!publicKeyB64 || !secretKeyB64) {
       throw new Error('No stored keys found')
     }
 
-    return cryptoService.decryptKeyPairFromStorage(encryptedBlob, salt, password)
-  }
-
-  /**
-   * Restore keys from server backup
-   */
-  async restoreFromBackup(encryptedBlob: string, salt: string, password: string): Promise<IdentityKeyPair> {
-    // First verify we can decrypt them
-    const keyPair = cryptoService.decryptKeyPairFromStorage(encryptedBlob, salt, password)
-
-    // Store locally
-    await set(ENCRYPTED_KEYS_BLOB, encryptedBlob)
-    await set(ENCRYPTED_KEYS_SALT, salt)
-    await set(KEYS_STORED_FLAG, true)
-
-    return keyPair
+    return {
+      publicKey: base64ToUint8Array(publicKeyB64),
+      secretKey: base64ToUint8Array(secretKeyB64),
+    }
   }
 
   /**
    * Clear all stored keys
    */
   async clearKeys(): Promise<void> {
-    await del(ENCRYPTED_KEYS_BLOB)
-    await del(ENCRYPTED_KEYS_SALT)
+    await del(PUBLIC_KEY)
+    await del(SECRET_KEY)
     await del(KEYS_STORED_FLAG)
     await del(CURRENT_KEY_ID)
   }
