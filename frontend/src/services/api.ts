@@ -85,15 +85,21 @@ export const chatsApi = {
 export const messagesApi = {
   list: (chatId: string, before?: string) =>
     api.get(`/api/chats/${chatId}/messages${before ? `?before=${before}` : ''}`),
-  send: (chatId: string, content: string, replyToId?: string, encrypted?: {
-    encrypted_content: string
-    ephemeral_public_key: string
+  send: (chatId: string, content: string, replyToId?: string) =>
+    api.post(`/api/chats/${chatId}/messages`, {
+      content,
+      reply_to_id: replyToId,
+    }),
+  sendE2E: (chatId: string, _plaintext: string, encryption: {
+    encrypted_for_recipient: { encrypted_content: string; ephemeral_public_key: string } | null
+    encrypted_for_sender: { encrypted_content: string; ephemeral_public_key: string } | null
+    recipient_user_id: string | undefined
   }) =>
     api.post(`/api/chats/${chatId}/messages`, {
-      content: encrypted ? null : content,
-      reply_to_id: replyToId,
-      encrypted_content: encrypted?.encrypted_content,
-      ephemeral_public_key: encrypted?.ephemeral_public_key,
+      content: null,  // No plaintext stored
+      encrypted_for_recipient: encryption.encrypted_for_recipient,
+      encrypted_for_sender: encryption.encrypted_for_sender,
+      recipient_user_id: encryption.recipient_user_id,
     }),
   edit: (messageId: string, content: string) =>
     api.put(`/api/messages/${messageId}`, { content }),

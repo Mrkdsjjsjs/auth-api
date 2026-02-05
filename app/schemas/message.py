@@ -5,15 +5,21 @@ from app.models.message import MessageType
 from app.schemas.user import UserPublicResponse
 
 
+class EncryptedPayload(BaseModel):
+    encrypted_content: str  # ciphertext:nonce format
+    ephemeral_public_key: str
+
+
 class MessageCreate(BaseModel):
-    """Client can send encrypted or plaintext messages"""
-    content: Optional[str] = None  # Plaintext fallback
+    """E2E encrypted message - encrypted separately for each recipient"""
+    content: Optional[str] = None  # Plaintext fallback (only if encryption fails)
     message_type: MessageType = MessageType.text
     file_id: Optional[str] = None
     reply_to_id: Optional[str] = None
-    # Client-side encryption fields
-    encrypted_content: Optional[str] = None  # ciphertext:nonce format
-    ephemeral_public_key: Optional[str] = None
+    # E2E encryption - separate payload for each user
+    encrypted_for_recipient: Optional[EncryptedPayload] = None
+    encrypted_for_sender: Optional[EncryptedPayload] = None
+    recipient_user_id: Optional[str] = None
 
 
 class MessageUpdate(BaseModel):

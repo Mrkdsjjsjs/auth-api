@@ -170,18 +170,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const recipientMember = currentChat?.members.find(m => m.user_id !== currentUser?.id)
       const recipientUserId = recipientMember?.user_id
 
-      // Try to encrypt message for recipient
-      let encrypted = null
-      if (recipientUserId) {
+      // E2E: encrypt for recipient AND for self
+      let encryptedForRecipient = null
+      let encryptedForSelf = null
+
+      if (recipientUserId && currentUser?.id) {
         const encryptionStore = (await import('./encryptionStore')).useEncryptionStore.getState()
-        encrypted = await encryptionStore.encryptMessage(content, recipientUserId)
-        if (encrypted) {
-          console.log('[Chat] Message encrypted for recipient')
-        }
+
+        // Encrypt for recipient
+        encryptedForRecipient = await encryptionStore.encryptMessage(content, recipientUserId)
+
+        // Encrypt for self (so we can read our own messages)
+        encryptedForSelf = await encryptionStore.encryptMessage(content, currentUser.id)
       }
 
-      // Send message (encrypted if possible, plaintext as fallback)
-      const { data } = await messagesApi.send(currentChatId, content, undefined, encrypted || undefined)
+      // Send both encrypted versions
+      const { data } = await messagesApi.sendE2E(currentChatId, content, {
+        encrypted_for_recipient: encryptedForRecipient,
+        encrypted_for_sender: encryptedForSelf,
+        recipient_user_id: recipientUserId,
+      })
 
       // Replace temp message with real one (or remove if it comes via WebSocket)
       set((state) => ({
