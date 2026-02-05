@@ -46,7 +46,7 @@ def build_message_response(message: Message, session: Session, encrypt_for_user_
         "is_edited": message.is_edited,
         "is_deleted": message.is_deleted,
         "created_at": message.created_at.isoformat(),
-        "sender": UserPublicResponse.model_validate(sender).model_dump() if sender else None,
+        "sender": UserPublicResponse.model_validate(sender).model_dump(mode='json') if sender else None,
         "encrypted_content": None,
         "ephemeral_public_key": None,
         "encryption_version": 0,
