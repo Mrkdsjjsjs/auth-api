@@ -142,7 +142,7 @@ def update_me(
     summary="🖼️ Update avatar",
     responses={
         200: {"description": "Avatar updated"},
-        400: {"description": "Invalid file type"},
+        400: {"description": "Invalid file type or video too long"},
     })
 async def update_avatar(
     file: UploadFile = File(...),
@@ -152,13 +152,45 @@ async def update_avatar(
     """
     **Upload new avatar**
 
-    Upload a new profile picture.
+    Upload a new profile picture or video.
 
-    - **file**: Image file (jpg, png, gif, webp)
-    - Max size: 10MB
+    - **file**: Image (jpg, png, gif, webp) or video (mp4, webm, mov)
+    - Image max size: 10MB
+    - Video max size: 20MB, max duration: 10 seconds
     """
+    from app.services.file_service import VIDEO_AVATAR_MAX_DURATION
+    from app.models.file import FileType
+    from pathlib import Path
+
     file_service = FileService()
+
+    # Check if it's a video
+    ext = Path(file.filename).suffix.lower() if file.filename else ""
+    is_video = ext in {".mp4", ".webm", ".mov"}
+
     file_record = await file_service.upload_file(file, current_user.id, session)
+
+    # If video, check duration
+    if is_video:
+        from app.services.file_service import UPLOAD_DIR
+        video_path = UPLOAD_DIR / file_record.filename
+        duration = file_service.get_video_duration(video_path)
+
+        if duration is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Could not read video duration"
+            )
+
+        if duration > VIDEO_AVATAR_MAX_DURATION:
+            # Delete the uploaded file
+            video_path.unlink(missing_ok=True)
+            session.delete(file_record)
+            session.commit()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Video must be {VIDEO_AVATAR_MAX_DURATION} seconds or less (yours is {duration:.1f}s)"
+            )
 
     current_user.avatar_url = file_record.url
     session.add(current_user)

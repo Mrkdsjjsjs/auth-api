@@ -9,6 +9,7 @@ class FileType(str, Enum):
     image = "image"
     document = "document"
     voice = "voice"
+    video = "video"
 
 
 class File(SQLModel, table=True):

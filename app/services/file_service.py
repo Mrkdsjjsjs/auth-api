@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import Optional
 import uuid
 import aiofiles
+import subprocess
+import json
 from PIL import Image
 import io
 
@@ -14,13 +16,18 @@ THUMBNAIL_DIR = UPLOAD_DIR / "thumbnails"
 
 # File type configurations
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov"}
 DOCUMENT_EXTENSIONS = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".zip", ".txt"}
 VOICE_EXTENSIONS = {".ogg", ".mp3", ".webm", ".wav"}
 
 # Size limits in bytes
 IMAGE_SIZE_LIMIT = 10 * 1024 * 1024  # 10MB
+VIDEO_SIZE_LIMIT = 20 * 1024 * 1024  # 20MB
 DOCUMENT_SIZE_LIMIT = 50 * 1024 * 1024  # 50MB
 VOICE_SIZE_LIMIT = 5 * 1024 * 1024  # 5MB
+
+# Video duration limit for avatars (seconds)
+VIDEO_AVATAR_MAX_DURATION = 10
 
 THUMBNAIL_SIZE = (200, 200)
 
@@ -39,6 +46,8 @@ class FileService:
 
         if ext in IMAGE_EXTENSIONS:
             return FileType.image
+        elif ext in VIDEO_EXTENSIONS:
+            return FileType.video
         elif ext in DOCUMENT_EXTENSIONS:
             return FileType.document
         elif ext in VOICE_EXTENSIONS:
@@ -58,6 +67,11 @@ class FileService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Image size exceeds limit of {IMAGE_SIZE_LIMIT // (1024*1024)}MB"
             )
+        elif file_type == FileType.video and size > VIDEO_SIZE_LIMIT:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Video size exceeds limit of {VIDEO_SIZE_LIMIT // (1024*1024)}MB"
+            )
         elif file_type == FileType.document and size > DOCUMENT_SIZE_LIMIT:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -68,6 +82,25 @@ class FileService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Voice file size exceeds limit of {VOICE_SIZE_LIMIT // (1024*1024)}MB"
             )
+
+    def get_video_duration(self, file_path: Path) -> Optional[float]:
+        """Get video duration in seconds using ffprobe"""
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe", "-v", "quiet", "-print_format", "json",
+                    "-show_format", str(file_path)
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode == 0:
+                data = json.loads(result.stdout)
+                return float(data.get("format", {}).get("duration", 0))
+        except Exception:
+            pass
+        return None
 
     async def create_thumbnail(self, file_path: Path, thumbnail_filename: str) -> Optional[str]:
         """Create thumbnail for image files"""

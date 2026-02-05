@@ -169,6 +169,8 @@ export default function ProfilePage() {
           >
             {user.avatar_url?.startsWith('emoji:') ? (
               <span className="emoji-display">{user.avatar_url.slice(6)}</span>
+            ) : user.avatar_url?.match(/\.(mp4|webm|mov)$/i) ? (
+              <video src={user.avatar_url} autoPlay loop muted playsInline className="avatar-video" />
             ) : user.avatar_url ? (
               <img src={user.avatar_url} alt="Avatar" />
             ) : (
@@ -212,7 +214,7 @@ export default function ProfilePage() {
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*,image/gif"
+            accept="image/*,video/mp4,video/webm,video/quicktime"
             onChange={handleAvatarChange}
             style={{ display: 'none' }}
           />
@@ -402,7 +404,9 @@ export default function ProfilePage() {
           overflow: hidden;
         }
 
-        .profile-avatar img {
+        .profile-avatar img,
+        .profile-avatar video,
+        .avatar-video {
           width: 100%;
           height: 100%;
           object-fit: cover;

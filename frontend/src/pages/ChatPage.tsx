@@ -82,6 +82,9 @@ export default function ChatPage() {
     if (avatarUrl?.startsWith('emoji:')) {
       return <span className={size === 'large' ? 'emoji-lg' : ''}>{avatarUrl.slice(6)}</span>
     }
+    if (avatarUrl?.match(/\.(mp4|webm|mov)$/i)) {
+      return <video src={avatarUrl} autoPlay loop muted playsInline className="avatar-img" />
+    }
     if (avatarUrl) {
       return <img src={avatarUrl} alt="" className="avatar-img" />
     }
