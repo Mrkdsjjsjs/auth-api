@@ -20,7 +20,7 @@ interface EncryptionState {
     encrypted_content?: string | null
     ephemeral_public_key?: string | null
   }) => Promise<string>
-  clearKeys: () => Promise<void>
+  clearKeys: () => void
 }
 
 export const useEncryptionStore = create<EncryptionState>((set, get) => ({
@@ -32,14 +32,14 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
   initialize: async () => {
     console.log('[Encryption] Starting initialization...')
     try {
-      const hasKeys = await keyStorageService.hasStoredKeys()
+      const hasKeys = keyStorageService.hasStoredKeys()
       console.log('[Encryption] hasStoredKeys:', hasKeys)
 
       if (hasKeys) {
         try {
-          console.log('[Encryption] Loading keys from IndexedDB...')
-          const keyPair = await keyStorageService.loadKeys()
-          const currentKeyId = await keyStorageService.getCurrentKeyId()
+          console.log('[Encryption] Loading keys from localStorage...')
+          const keyPair = keyStorageService.loadKeys()
+          const currentKeyId = keyStorageService.getCurrentKeyId()
           console.log('[Encryption] Keys loaded, keyId:', currentKeyId)
 
           set({
@@ -48,10 +48,10 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
             identityKeyPair: keyPair,
             currentKeyId,
           })
-          console.log('[Encryption] Initialized successfully from IndexedDB')
+          console.log('[Encryption] SUCCESS - Initialized from localStorage')
         } catch (loadError) {
-          console.warn('[Encryption] Failed to load keys, clearing and regenerating...', loadError)
-          await keyStorageService.clearKeys()
+          console.warn('[Encryption] Failed to load keys, regenerating...', loadError)
+          keyStorageService.clearKeys()
           await get().generateKeys()
         }
       } else {
@@ -70,17 +70,17 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
       const keyPair = cryptoService.generateIdentityKeyPair()
       console.log('[Encryption] Key pair generated')
 
-      await keyStorageService.storeKeys(keyPair)
-      console.log('[Encryption] Keys stored in IndexedDB')
+      keyStorageService.storeKeys(keyPair)
+      console.log('[Encryption] Keys stored')
 
       const { data: registeredKey } = await keysApi.register({
         public_key: uint8ArrayToBase64(keyPair.publicKey),
         signature_public_key: uint8ArrayToBase64(keyPair.publicKey),
         key_type: 'identity',
       })
-      console.log('[Encryption] Keys registered on server, id:', registeredKey.id)
+      console.log('[Encryption] Registered on server, id:', registeredKey.id)
 
-      await keyStorageService.setCurrentKeyId(registeredKey.id)
+      keyStorageService.setCurrentKeyId(registeredKey.id)
 
       set({
         isInitialized: true,
@@ -88,10 +88,11 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
         identityKeyPair: keyPair,
         currentKeyId: registeredKey.id,
       })
-      console.log('[Encryption] Keys generated and initialized successfully')
+      console.log('[Encryption] SUCCESS - Keys generated')
     } catch (error) {
       console.error('[Encryption] Failed to generate keys:', error)
-      throw error
+      // Don't throw - just log and leave uninitialized
+      set({ isInitialized: false, hasKeys: false })
     }
   },
 
@@ -119,7 +120,8 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
     )
   },
 
-  clearKeys: async () => {
+  clearKeys: () => {
+    keyStorageService.clearKeys()
     set({
       isInitialized: false,
       hasKeys: false,

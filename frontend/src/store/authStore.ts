@@ -2,7 +2,6 @@ import { create } from 'zustand'
 import { authApi } from '../services/api'
 import wsService from '../services/websocket'
 import { useEncryptionStore } from './encryptionStore'
-import { keyStorageService } from '../services/keyStorage'
 
 interface User {
   id: string
@@ -44,13 +43,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       // Initialize encryption
       const encryptionStore = useEncryptionStore.getState()
-      const hasKeys = await keyStorageService.hasStoredKeys()
-
-      if (hasKeys) {
-        await encryptionStore.initialize()
-      } else {
-        await encryptionStore.generateKeys()
-      }
+      await encryptionStore.initialize()
     } catch (error: any) {
       set({
         error: error.response?.data?.detail || 'Login failed',
@@ -97,7 +90,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     wsService.disconnect()
 
     const encryptionStore = useEncryptionStore.getState()
-    await encryptionStore.clearKeys()
+    encryptionStore.clearKeys()
 
     set({ user: null, isAuthenticated: false })
   },

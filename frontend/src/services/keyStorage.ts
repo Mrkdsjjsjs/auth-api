@@ -1,40 +1,38 @@
-import { get, set, del } from 'idb-keyval'
 import { IdentityKeyPair, uint8ArrayToBase64, base64ToUint8Array } from './crypto'
 
 const KEYS_STORED_FLAG = 'encryption_keys_stored'
 const PUBLIC_KEY = 'encryption_public_key'
 const SECRET_KEY = 'encryption_secret_key'
-const CURRENT_KEY_ID = 'current_key_id'
+const CURRENT_KEY_ID = 'encryption_current_key_id'
 
 export class KeyStorageService {
-  async hasStoredKeys(): Promise<boolean> {
-    const flag = await get(KEYS_STORED_FLAG)
-    console.log('[KeyStorage] hasStoredKeys flag:', flag)
-    return flag === true
+  hasStoredKeys(): boolean {
+    const flag = localStorage.getItem(KEYS_STORED_FLAG)
+    console.log('[KeyStorage] hasStoredKeys:', flag)
+    return flag === 'true'
   }
 
-  async storeKeys(keyPair: IdentityKeyPair): Promise<void> {
+  storeKeys(keyPair: IdentityKeyPair): void {
     console.log('[KeyStorage] Storing keys...')
     const pubKey = uint8ArrayToBase64(keyPair.publicKey)
     const secKey = uint8ArrayToBase64(keyPair.secretKey)
-    console.log('[KeyStorage] Public key (first 20 chars):', pubKey.substring(0, 20))
 
-    await set(PUBLIC_KEY, pubKey)
-    await set(SECRET_KEY, secKey)
-    await set(KEYS_STORED_FLAG, true)
-    console.log('[KeyStorage] Keys stored successfully')
+    localStorage.setItem(PUBLIC_KEY, pubKey)
+    localStorage.setItem(SECRET_KEY, secKey)
+    localStorage.setItem(KEYS_STORED_FLAG, 'true')
+    console.log('[KeyStorage] Keys stored in localStorage')
   }
 
-  async loadKeys(): Promise<IdentityKeyPair> {
+  loadKeys(): IdentityKeyPair {
     console.log('[KeyStorage] Loading keys...')
-    const publicKeyB64 = await get(PUBLIC_KEY)
-    const secretKeyB64 = await get(SECRET_KEY)
+    const publicKeyB64 = localStorage.getItem(PUBLIC_KEY)
+    const secretKeyB64 = localStorage.getItem(SECRET_KEY)
 
-    console.log('[KeyStorage] publicKeyB64:', publicKeyB64 ? 'exists' : 'null')
-    console.log('[KeyStorage] secretKeyB64:', secretKeyB64 ? 'exists' : 'null')
+    console.log('[KeyStorage] publicKey exists:', !!publicKeyB64)
+    console.log('[KeyStorage] secretKey exists:', !!secretKeyB64)
 
     if (!publicKeyB64 || !secretKeyB64) {
-      throw new Error('No stored keys found - missing PUBLIC_KEY or SECRET_KEY')
+      throw new Error('No stored keys found')
     }
 
     return {
@@ -43,21 +41,20 @@ export class KeyStorageService {
     }
   }
 
-  async clearKeys(): Promise<void> {
-    console.log('[KeyStorage] Clearing all keys...')
-    await del(PUBLIC_KEY)
-    await del(SECRET_KEY)
-    await del(KEYS_STORED_FLAG)
-    await del(CURRENT_KEY_ID)
-    console.log('[KeyStorage] Keys cleared')
+  clearKeys(): void {
+    console.log('[KeyStorage] Clearing keys...')
+    localStorage.removeItem(PUBLIC_KEY)
+    localStorage.removeItem(SECRET_KEY)
+    localStorage.removeItem(KEYS_STORED_FLAG)
+    localStorage.removeItem(CURRENT_KEY_ID)
   }
 
-  async setCurrentKeyId(keyId: string): Promise<void> {
-    await set(CURRENT_KEY_ID, keyId)
+  setCurrentKeyId(keyId: string): void {
+    localStorage.setItem(CURRENT_KEY_ID, keyId)
   }
 
-  async getCurrentKeyId(): Promise<string | null> {
-    return (await get(CURRENT_KEY_ID)) || null
+  getCurrentKeyId(): string | null {
+    return localStorage.getItem(CURRENT_KEY_ID)
   }
 }
 
