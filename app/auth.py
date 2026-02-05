@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlmodel import Session, select
 from app.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE, REFRESH_TOKEN_EXPIRE
@@ -11,7 +11,7 @@ from app.models.user import User
 import secrets
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)  # Don't auto-error, we'll check cookies too
 
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
@@ -40,10 +40,21 @@ def decode_token(token: str, token_type: str) -> Optional[str]:
         return None
 
 def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     session: Session = Depends(get_session)
 ) -> User:
-    user_id = decode_token(credentials.credentials, "access")
+    # Try to get token from Authorization header first, then from cookie
+    token = None
+    if credentials:
+        token = credentials.credentials
+    else:
+        token = request.cookies.get("access_token")
+
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
+    user_id = decode_token(token, "access")
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     user = session.get(User, user_id)

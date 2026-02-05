@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
+from fastapi.responses import JSONResponse
 from sqlmodel import Session, select
 from datetime import datetime, timedelta
 from app.database import get_session
@@ -14,6 +15,35 @@ from app.auth import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# Cookie settings
+COOKIE_SECURE = True  # HTTPS only
+COOKIE_HTTPONLY = True  # Not accessible via JS
+COOKIE_SAMESITE = "none"  # Allow cross-site for CORS
+ACCESS_TOKEN_MAX_AGE = 15 * 60  # 15 minutes
+REFRESH_TOKEN_MAX_AGE = 7 * 24 * 60 * 60  # 7 days
+
+
+def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
+    """Set httpOnly cookies for tokens"""
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        max_age=ACCESS_TOKEN_MAX_AGE,
+        httponly=COOKIE_HTTPONLY,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        path="/"
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        max_age=REFRESH_TOKEN_MAX_AGE,
+        httponly=COOKIE_HTTPONLY,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        path="/"
+    )
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED,
@@ -53,67 +83,79 @@ def register(data: UserCreate, session: Session = Depends(get_session)):
 @router.post("/login", response_model=TokenResponse,
     summary="🔓 Login user",
     responses={
-        200: {"description": "Login successful, tokens returned"},
+        200: {"description": "Login successful, tokens returned + cookies set"},
         401: {"description": "Invalid credentials"},
     })
-def login(data: UserCreate, session: Session = Depends(get_session)):
+def login(data: UserCreate, response: Response, session: Session = Depends(get_session)):
     """
     **Authenticate user and get tokens**
 
     Login with email and password to receive JWT tokens.
+    Tokens are also set as httpOnly cookies for browser security.
 
     **Token Lifetimes:**
     - 🔑 Access Token: **15 minutes**
     - 🔄 Refresh Token: **7 days**
 
-    ```javascript
-    // Store tokens securely
-    localStorage.setItem('access_token', response.access_token);
-    localStorage.setItem('refresh_token', response.refresh_token);
-    ```
+    **Cookies:** httpOnly, Secure, SameSite=None
     """
     user = session.exec(select(User).where(User.email == data.email)).first()
     if not user or not verify_password(data.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+
+    access_token = create_access_token(user.id)
+    refresh_token = create_refresh_token(user.id)
+
+    # Set httpOnly cookies
+    set_auth_cookies(response, access_token, refresh_token)
+
     return TokenResponse(
-        access_token=create_access_token(user.id),
-        refresh_token=create_refresh_token(user.id)
+        access_token=access_token,
+        refresh_token=refresh_token
     )
 
 
 @router.post("/refresh", response_model=TokenResponse,
     summary="🔄 Refresh tokens",
     responses={
-        200: {"description": "New tokens generated"},
+        200: {"description": "New tokens generated + cookies updated"},
         401: {"description": "Invalid or expired refresh token"},
     })
-def refresh(data: RefreshRequest, session: Session = Depends(get_session)):
+def refresh(request: Request, response: Response, data: RefreshRequest = None, session: Session = Depends(get_session)):
     """
     **Get new access & refresh tokens**
 
     Use refresh token to get new tokens when access token expires.
+    Can use token from body OR from cookie.
 
     ⚠️ **Important:** Both tokens are rotated on refresh for security.
-
-    ```
-    ┌─────────────────────────────────────────┐
-    │  Access Token Expired (401)             │
-    │           ↓                             │
-    │  POST /auth/refresh                     │
-    │           ↓                             │
-    │  New Access + Refresh Tokens            │
-    └─────────────────────────────────────────┘
-    ```
     """
-    user_id = decode_token(data.refresh_token, "refresh")
+    # Try to get refresh token from body first, then from cookie
+    refresh_token = None
+    if data and data.refresh_token:
+        refresh_token = data.refresh_token
+    else:
+        refresh_token = request.cookies.get("refresh_token")
+
+    if not refresh_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token required")
+
+    user_id = decode_token(refresh_token, "refresh")
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+    access_token = create_access_token(user.id)
+    new_refresh_token = create_refresh_token(user.id)
+
+    # Set httpOnly cookies
+    set_auth_cookies(response, access_token, new_refresh_token)
+
     return TokenResponse(
-        access_token=create_access_token(user.id),
-        refresh_token=create_refresh_token(user.id)
+        access_token=access_token,
+        refresh_token=new_refresh_token
     )
 
 
@@ -138,6 +180,22 @@ def me(user: User = Depends(get_current_user)):
     Returns the current user's profile information.
     """
     return user
+
+
+@router.post("/logout", response_model=MessageResponse,
+    summary="🚪 Logout user",
+    responses={
+        200: {"description": "Logged out successfully, cookies cleared"},
+    })
+def logout(response: Response):
+    """
+    **Logout and clear auth cookies**
+
+    Clears the httpOnly cookies containing tokens.
+    """
+    response.delete_cookie(key="access_token", path="/", samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE)
+    response.delete_cookie(key="refresh_token", path="/", samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE)
+    return MessageResponse(message="Logged out successfully")
 
 
 @router.post("/forgot", response_model=MessageResponse,

@@ -22,7 +22,7 @@ interface AuthState {
   currentPassword: string | null  // Temporarily stored for encryption init
   login: (email: string, password: string) => Promise<void>
   register: (email: string, password: string) => Promise<void>
-  logout: () => void
+  logout: () => Promise<void>
   loadUser: () => Promise<void>
 }
 
@@ -99,7 +99,14 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
-  logout: () => {
+  logout: async () => {
+    // Call API to clear cookies
+    try {
+      await authApi.logout()
+    } catch {
+      // Ignore errors, still clear local state
+    }
+
     localStorage.removeItem('access_token')
     localStorage.removeItem('refresh_token')
     wsService.disconnect()
@@ -109,12 +116,14 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   loadUser: async () => {
-    const token = localStorage.getItem('access_token')
-    if (!token) return
-
+    // Try to load user - cookies will be sent automatically
+    // Also check localStorage for WebSocket token
     try {
       const { data: user } = await authApi.me()
-      wsService.connect(token)
+      const token = localStorage.getItem('access_token')
+      if (token) {
+        wsService.connect(token)
+      }
       set({ user, isAuthenticated: true })
 
       // Note: Encryption won't be fully initialized until user provides password again

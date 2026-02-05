@@ -7,14 +7,16 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true,  // Send cookies with requests
 })
 
-// Add token to requests
+// Add token to requests (from localStorage as backup, cookies are sent automatically)
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('access_token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
+  // Cookies with credentials: true are sent automatically
   return config
 })
 
@@ -74,6 +76,8 @@ export const authApi = {
 
   register: (email: string, password: string) =>
     api.post('/auth/register', { email, password }),
+
+  logout: () => api.post('/auth/logout'),
 
   me: () => api.get('/auth/me'),
 }
