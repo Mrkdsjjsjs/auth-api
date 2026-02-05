@@ -1,9 +1,13 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.openapi.utils import get_openapi
+from pathlib import Path
 from app.database import init_db
 from app.routes import router
+
+STATIC_DIR = Path(__file__).parent / "static"
 
 DESCRIPTION = """
 ## 🔐 Auth API - Production-Ready Authentication
@@ -60,6 +64,10 @@ app = FastAPI(
 )
 
 app.include_router(router)
+
+# Mount static files
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 CUSTOM_CSS = """
 :root {
@@ -661,6 +669,9 @@ LANDING_HTML = """
             <h1>Auth API</h1>
             <p class="subtitle">Production-ready authentication API with JWT tokens, secure password hashing, and complete auth flow</p>
             <div class="buttons">
+                <a href="/demo" class="btn btn-primary">
+                    <span>🎬</span> Watch Demo
+                </a>
                 <a href="/docs" class="btn btn-primary">
                     <span>📚</span> Interactive Docs
                 </a>
@@ -796,6 +807,14 @@ def custom_redoc():
         title="🔐 Auth API - ReDoc",
         redoc_js_url="https://cdn.jsdelivr.net/npm/redoc@latest/bundles/redoc.standalone.js",
     )
+
+@app.get("/demo", response_class=HTMLResponse, include_in_schema=False)
+def demo():
+    """Interactive API Demo"""
+    demo_file = STATIC_DIR / "demo.html"
+    if demo_file.exists():
+        return HTMLResponse(content=demo_file.read_text())
+    return HTMLResponse(content="<h1>Demo not found</h1>", status_code=404)
 
 @app.get("/health", tags=["health"])
 def health():
