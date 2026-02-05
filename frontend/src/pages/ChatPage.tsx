@@ -6,6 +6,7 @@ import { useEncryptionStore } from '../store/encryptionStore'
 import { usersApi, encryptedFilesApi } from '../services/api'
 import { cryptoService, base64ToUint8Array } from '../services/crypto'
 import wsService from '../services/websocket'
+import { notificationService } from '../services/notification'
 import { format } from 'date-fns'
 import { Send, Plus, LogOut, Search, MessageCircle, X, User, Lock, Unlock, ArrowLeft, Paperclip, FileIcon, Image, Music, Download, AtSign } from 'lucide-react'
 
@@ -60,6 +61,8 @@ export default function ChatPage() {
     loadUser()
     loadChats()
     setupWebSocket()
+    // Request notification permission
+    notificationService.requestPermission()
   }, [])
 
   // Auto-scroll to bottom when new messages arrive (only if already at bottom)

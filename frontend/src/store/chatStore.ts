@@ -3,6 +3,7 @@ import { chatsApi, messagesApi, encryptedFilesApi } from '../services/api'
 import wsService from '../services/websocket'
 import { useEncryptionStore } from './encryptionStore'
 import { cryptoService, uint8ArrayToBase64 } from '../services/crypto'
+import { notificationService } from '../services/notification'
 
 interface User {
   id: string
@@ -531,6 +532,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
           messagesApi.markRead(decryptedMessage.id)
         } else {
           console.log('[WS] Message is for different chat:', decryptedMessage.chat_id)
+
+          // Play notification sound and show browser notification
+          const senderName = decryptedMessage.sender?.display_name
+            || decryptedMessage.sender?.username
+            || 'New message'
+          const messagePreview = decryptedMessage.content || '[File]'
+
+          // Find the chat to get info for navigation
+          const targetChat = get().chats.find(c => c.id === decryptedMessage.chat_id)
+
+          notificationService.notify(
+            senderName,
+            messagePreview,
+            () => {
+              // On click, navigate to that chat
+              if (targetChat) {
+                get().selectChat(decryptedMessage.chat_id)
+              }
+            }
+          )
+
           // Update unread count and last_message for non-current chat
           set((state) => ({
             chats: state.chats.map((c) =>
