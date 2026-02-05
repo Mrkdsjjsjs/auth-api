@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import { useChatStore } from '../store/chatStore'
@@ -6,7 +6,7 @@ import { useEncryptionStore } from '../store/encryptionStore'
 import { usersApi } from '../services/api'
 import wsService from '../services/websocket'
 import { format } from 'date-fns'
-import { Send, Plus, LogOut, Search, MessageCircle, X, User, Lock, Unlock } from 'lucide-react'
+import { Send, Plus, LogOut, Search, MessageCircle, X, User, Lock, Unlock, ArrowLeft } from 'lucide-react'
 
 export default function ChatPage() {
   const navigate = useNavigate()
@@ -29,12 +29,19 @@ export default function ChatPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [typingTimeout, setTypingTimeout] = useState<NodeJS.Timeout | null>(null)
+  const [showSidebar, setShowSidebar] = useState(true)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     loadUser()
     loadChats()
     setupWebSocket()
   }, [])
+
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
 
   const currentChat = chats.find((c) => c.id === currentChatId)
 
@@ -49,6 +56,25 @@ export default function ChatPage() {
     if (chat.name) return chat.name
     const otherUser = getOtherUser(chat)
     return otherUser?.display_name || otherUser?.username || 'Unknown'
+  }
+
+  const getChatAvatar = (chat: typeof currentChat) => {
+    if (!chat) return null
+    if (chat.avatar_url) return chat.avatar_url
+    const otherUser = getOtherUser(chat)
+    return otherUser?.avatar_url || null
+  }
+
+  const handleSelectChat = (chatId: string) => {
+    selectChat(chatId)
+    // Hide sidebar on mobile when chat is selected
+    if (window.innerWidth <= 768) {
+      setShowSidebar(false)
+    }
+  }
+
+  const handleBackToList = () => {
+    setShowSidebar(true)
   }
 
   const handleSend = async () => {
@@ -99,7 +125,7 @@ export default function ChatPage() {
       setShowNewChat(false)
       setSearchQuery('')
       setSearchResults([])
-      selectChat(chatId)
+      handleSelectChat(chatId)
     } catch {
       // Error handled
     }
@@ -110,7 +136,7 @@ export default function ChatPage() {
   return (
     <div className="chat-layout">
       {/* Sidebar */}
-      <div className="sidebar">
+      <div className={`sidebar ${!showSidebar ? 'hidden-mobile' : ''}`}>
         <div className="sidebar-header">
           <h2 className="sidebar-title">Chats</h2>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -140,48 +166,66 @@ export default function ChatPage() {
               No chats yet. Start a new conversation!
             </div>
           ) : (
-            chats.map((chat) => (
-              <div
-                key={chat.id}
-                className={`chat-item ${chat.id === currentChatId ? 'active' : ''}`}
-                onClick={() => selectChat(chat.id)}
-              >
-                <div className="chat-avatar">
-                  {getChatName(chat)?.[0]?.toUpperCase() || '?'}
-                </div>
-                <div className="chat-info">
-                  <div className="chat-name">{getChatName(chat)}</div>
-                  <div className="chat-last-message">
-                    {typingUsers[chat.id]?.length ? (
-                      <span style={{ color: 'var(--accent)' }}>typing...</span>
+            chats.map((chat) => {
+              const avatarUrl = getChatAvatar(chat)
+              return (
+                <div
+                  key={chat.id}
+                  className={`chat-item ${chat.id === currentChatId ? 'active' : ''}`}
+                  onClick={() => handleSelectChat(chat.id)}
+                >
+                  <div className="chat-avatar">
+                    {avatarUrl ? (
+                      <img src={avatarUrl} alt="" className="avatar-img" />
                     ) : (
-                      'Start chatting'
+                      getChatName(chat)?.[0]?.toUpperCase() || '?'
+                    )}
+                  </div>
+                  <div className="chat-info">
+                    <div className="chat-name">{getChatName(chat)}</div>
+                    <div className="chat-last-message">
+                      {typingUsers[chat.id]?.length ? (
+                        <span style={{ color: 'var(--accent)' }}>typing...</span>
+                      ) : (
+                        'Start chatting'
+                      )}
+                    </div>
+                  </div>
+                  <div className="chat-meta">
+                    {chat.last_message_at && (
+                      <div className="chat-time">
+                        {format(new Date(chat.last_message_at), 'HH:mm')}
+                      </div>
+                    )}
+                    {chat.unread_count > 0 && (
+                      <div className="chat-unread">{chat.unread_count}</div>
                     )}
                   </div>
                 </div>
-                <div className="chat-meta">
-                  {chat.last_message_at && (
-                    <div className="chat-time">
-                      {format(new Date(chat.last_message_at), 'HH:mm')}
-                    </div>
-                  )}
-                  {chat.unread_count > 0 && (
-                    <div className="chat-unread">{chat.unread_count}</div>
-                  )}
-                </div>
-              </div>
-            ))
+              )
+            })
           )}
         </div>
       </div>
 
       {/* Main Chat Area */}
-      <div className="chat-main">
+      <div className={`chat-main ${showSidebar ? 'hidden-mobile' : ''}`}>
         {currentChat ? (
           <>
             <div className="chat-header">
+              <button
+                className="icon-btn back-btn-mobile"
+                onClick={handleBackToList}
+                title="Back to chats"
+              >
+                <ArrowLeft size={20} />
+              </button>
               <div className="chat-avatar" style={{ width: 40, height: 40 }}>
-                {getChatName(currentChat)?.[0]?.toUpperCase()}
+                {getChatAvatar(currentChat) ? (
+                  <img src={getChatAvatar(currentChat)!} alt="" className="avatar-img" />
+                ) : (
+                  getChatName(currentChat)?.[0]?.toUpperCase()
+                )}
               </div>
               <div className="chat-header-info">
                 <div className="chat-header-name">{getChatName(currentChat)}</div>
@@ -228,6 +272,7 @@ export default function ChatPage() {
               {typingInCurrentChat.length > 0 && (
                 <div className="typing-indicator">Someone is typing...</div>
               )}
+              <div ref={messagesEndRef} />
             </div>
 
             <div className="message-input-container">
@@ -301,7 +346,11 @@ export default function ChatPage() {
                   onClick={() => handleStartChat(u.id)}
                 >
                   <div className="user-avatar">
-                    {(u.display_name || u.username || u.id)?.[0]?.toUpperCase()}
+                    {u.avatar_url ? (
+                      <img src={u.avatar_url} alt="" className="avatar-img" />
+                    ) : (
+                      (u.display_name || u.username || u.id)?.[0]?.toUpperCase()
+                    )}
                   </div>
                   <div>
                     <div className="user-name">

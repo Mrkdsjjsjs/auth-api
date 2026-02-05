@@ -127,15 +127,62 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   sendMessage: async (content) => {
-    const { currentChatId } = get()
+    const { currentChatId, messages } = get()
     if (!currentChatId || !content.trim()) return
+
+    // Get current user from authStore
+    const authStore = (await import('./authStore')).useAuthStore.getState()
+    const currentUser = authStore.user
+
+    // Create optimistic message with temp ID
+    const tempId = `temp-${Date.now()}`
+    const optimisticMessage: Message = {
+      id: tempId,
+      chat_id: currentChatId,
+      sender_id: currentUser?.id || '',
+      content: content,
+      message_type: 'text',
+      is_edited: false,
+      is_deleted: false,
+      created_at: new Date().toISOString(),
+      sender: currentUser ? {
+        id: currentUser.id,
+        username: currentUser.username,
+        display_name: currentUser.display_name,
+        avatar_url: currentUser.avatar_url,
+      } : undefined,
+    }
+
+    // Add message optimistically
+    set({ messages: [...messages, optimisticMessage] })
 
     try {
       // Send plaintext - server encrypts when delivering
-      await messagesApi.send(currentChatId, content)
-      // Message will come back via WebSocket
+      const { data } = await messagesApi.send(currentChatId, content)
+
+      // Replace temp message with real one (or remove if it comes via WebSocket)
+      set((state) => ({
+        messages: state.messages.map((m) =>
+          m.id === tempId ? { ...optimisticMessage, id: data.id } : m
+        ),
+        // Update last_message_at for current chat and move to top
+        chats: [...state.chats]
+          .map((c) => c.id === currentChatId
+            ? { ...c, last_message_at: new Date().toISOString() }
+            : c
+          )
+          .sort((a, b) => {
+            const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0
+            const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0
+            return bTime - aTime
+          }),
+      }))
     } catch (error) {
       console.error('Failed to send message:', error)
+      // Remove optimistic message on error
+      set((state) => ({
+        messages: state.messages.filter((m) => m.id !== tempId),
+      }))
     }
   },
 
@@ -155,15 +202,35 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setupWebSocket: () => {
     // Handle new messages (already encrypted for us by server)
     wsService.on('new_message', async (data) => {
-      const { currentChatId, chats } = get()
+      const { currentChatId, chats, messages, loadChats } = get()
+
+      // Check if chat exists in our list, if not reload chats
+      const chatExists = chats.some(c => c.id === data.message.chat_id)
+      if (!chatExists) {
+        await loadChats()
+      }
 
       // Decrypt the message
       const decryptedMessage = await decryptMessage(data.message)
 
       if (decryptedMessage.chat_id === currentChatId) {
         // Check if message already exists (avoid duplicates)
-        const exists = get().messages.some(m => m.id === decryptedMessage.id)
-        if (!exists) {
+        const existsById = messages.some(m => m.id === decryptedMessage.id)
+        // Also check for temp messages we added optimistically
+        const tempMessage = messages.find(m =>
+          m.id.startsWith('temp-') &&
+          m.sender_id === decryptedMessage.sender_id &&
+          m.content === decryptedMessage.content
+        )
+
+        if (tempMessage) {
+          // Replace temp message with real one from server
+          set((state) => ({
+            messages: state.messages.map(m =>
+              m.id === tempMessage.id ? decryptedMessage : m
+            ),
+          }))
+        } else if (!existsById) {
           set((state) => ({
             messages: [...state.messages, decryptedMessage],
           }))
@@ -175,11 +242,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set({
           chats: chats.map((c) =>
             c.id === decryptedMessage.chat_id
-              ? { ...c, unread_count: c.unread_count + 1 }
+              ? { ...c, unread_count: c.unread_count + 1, last_message_at: decryptedMessage.created_at }
               : c
           ),
         })
       }
+
+      // Move chat to top of list (sort by last_message_at)
+      set((state) => ({
+        chats: [...state.chats].sort((a, b) => {
+          const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0
+          const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0
+          return bTime - aTime
+        }),
+      }))
     })
 
     // Handle message edits
