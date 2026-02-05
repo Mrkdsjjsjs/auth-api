@@ -57,30 +57,41 @@ DESCRIPTION = """
 
 ### Features
 - **JWT Access & Refresh Tokens** - Secure token-based auth
+- **End-to-End Encryption** - X25519/Ed25519/AES-256-GCM encryption
 - **Real-time WebSocket** - Instant message delivery
 - **Direct & Group Chats** - Private and group conversations
 - **File Sharing** - Images, documents, voice messages
 - **Message Search** - Full-text search across chats
 - **Typing Indicators** - Real-time typing status
 - **Read Receipts** - Message delivery confirmation
+- **User Profiles** - @username tags, avatars, bios
 
 ### Tech Stack
 - **Database:** PostgreSQL
 - **Cache:** Redis
 - **Real-time:** WebSocket + Redis Pub/Sub
+- **Encryption:** X25519 (ECDH), Ed25519 (signatures), AES-256-GCM
 
 ### WebSocket Events
 ```
 Client → Server: send_message, typing_start, typing_stop, read_receipt
 Server → Client: new_message, message_edited, message_deleted, user_online/offline
 ```
+
+### E2E Encryption Flow
+```
+Registration: Password → PBKDF2 → Derived Key → Encrypts Private Key (IndexedDB)
+Direct Chat: X25519(ephemeral, recipient_pub) → shared_secret → AES-256-GCM
+Group Chat: AES-256 group_key encrypted for each member
+```
 """
 
 TAGS_METADATA = [
     {"name": "auth", "description": "🔑 **Authentication** - Register, login, token refresh"},
-    {"name": "users", "description": "👤 **Users** - Profile management, user search"},
+    {"name": "users", "description": "👤 **Users** - Profile management, @username search"},
     {"name": "chats", "description": "💬 **Chats** - Direct and group chat management"},
-    {"name": "messages", "description": "✉️ **Messages** - Send, edit, delete messages"},
+    {"name": "messages", "description": "✉️ **Messages** - Send, edit, delete (E2E encrypted)"},
+    {"name": "encryption", "description": "🔐 **Encryption** - Key management, E2E encryption"},
     {"name": "files", "description": "📁 **Files** - Upload images, documents, voice messages"},
     {"name": "websocket", "description": "🔌 **WebSocket** - Real-time messaging connection"},
     {"name": "health", "description": "💚 **Health** - Service status monitoring"},

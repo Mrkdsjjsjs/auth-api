@@ -18,3 +18,5 @@ class User(SQLModel, table=True):
     bio: Optional[str] = Field(default=None)
     last_seen: Optional[datetime] = Field(default=None)
     is_online: bool = Field(default=False)
+    # E2E encryption settings
+    encryption_enabled: bool = Field(default=True)

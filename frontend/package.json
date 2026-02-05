@@ -15,7 +15,11 @@
     "zustand": "^4.5.0",
     "axios": "^1.6.7",
     "date-fns": "^3.3.1",
-    "lucide-react": "^0.330.0"
+    "lucide-react": "^0.330.0",
+    "@noble/curves": "^1.4.0",
+    "@noble/hashes": "^1.4.0",
+    "@noble/ciphers": "^0.5.0",
+    "idb-keyval": "^6.2.1"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

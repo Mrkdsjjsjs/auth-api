@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import { useChatStore } from '../store/chatStore'
+import { useEncryptionStore } from '../store/encryptionStore'
 import { usersApi } from '../services/api'
 import wsService from '../services/websocket'
 import { format } from 'date-fns'
-import { Send, Plus, LogOut, Search, MessageCircle, X } from 'lucide-react'
+import { Send, Plus, LogOut, Search, MessageCircle, X, User, Lock, Unlock } from 'lucide-react'
 
 export default function ChatPage() {
+  const navigate = useNavigate()
   const { user, logout, loadUser } = useAuthStore()
+  const { isInitialized: encryptionInitialized, hasKeys } = useEncryptionStore()
   const {
     chats,
     currentChatId,
@@ -110,10 +114,21 @@ export default function ChatPage() {
         <div className="sidebar-header">
           <h2 className="sidebar-title">Chats</h2>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button className="icon-btn" onClick={() => setShowNewChat(true)}>
+            <button
+              className="icon-btn"
+              onClick={() => setShowNewChat(true)}
+              title="New chat"
+            >
               <Plus size={20} />
             </button>
-            <button className="icon-btn" onClick={logout}>
+            <button
+              className="icon-btn"
+              onClick={() => navigate('/profile')}
+              title="Profile"
+            >
+              <User size={20} />
+            </button>
+            <button className="icon-btn" onClick={logout} title="Logout">
               <LogOut size={20} />
             </button>
           </div>
@@ -177,6 +192,16 @@ export default function ChatPage() {
                 >
                   {getOtherUser(currentChat)?.is_online ? 'online' : 'offline'}
                 </div>
+              </div>
+              <div
+                className="encryption-indicator"
+                title={encryptionInitialized && hasKeys ? 'E2E Encryption Active' : 'Encryption Not Active'}
+                style={{
+                  marginLeft: 'auto',
+                  color: encryptionInitialized && hasKeys ? '#22c55e' : 'var(--text-secondary)',
+                }}
+              >
+                {encryptionInitialized && hasKeys ? <Lock size={18} /> : <Unlock size={18} />}
               </div>
             </div>
 

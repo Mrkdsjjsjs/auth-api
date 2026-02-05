@@ -31,7 +31,12 @@ def get_message_response(message: Message, session: Session) -> MessageResponse:
         is_edited=message.is_edited,
         is_deleted=message.is_deleted,
         created_at=message.created_at,
-        sender=UserPublicResponse.model_validate(sender) if sender else None
+        sender=UserPublicResponse.model_validate(sender) if sender else None,
+        # E2E encryption fields
+        encrypted_content=message.encrypted_content if not message.is_deleted else None,
+        encryption_version=message.encryption_version,
+        sender_key_id=message.sender_key_id,
+        ephemeral_public_key=message.ephemeral_public_key,
     )
 
 
@@ -149,7 +154,12 @@ async def send_message(
         message_type=data.message_type,
         file_id=data.file_id,
         file_url=file_url,
-        reply_to_id=data.reply_to_id
+        reply_to_id=data.reply_to_id,
+        # E2E encryption fields
+        encrypted_content=data.encrypted_content,
+        encryption_version=data.encryption_version,
+        sender_key_id=data.sender_key_id,
+        ephemeral_public_key=data.ephemeral_public_key,
     )
     session.add(message)
 

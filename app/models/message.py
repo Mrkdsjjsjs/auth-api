@@ -24,3 +24,8 @@ class Message(SQLModel, table=True):
     is_edited: bool = Field(default=False)
     is_deleted: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    # E2E encryption fields
+    encryption_version: int = Field(default=0)  # 0=plaintext, 1=E2E
+    encrypted_content: Optional[str] = Field(default=None)  # Base64 encrypted content
+    sender_key_id: Optional[str] = Field(default=None, foreign_key="user_key.id")
+    ephemeral_public_key: Optional[str] = Field(default=None)  # For direct chats

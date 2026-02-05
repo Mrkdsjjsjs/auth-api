@@ -10,6 +10,11 @@ class MessageCreate(BaseModel):
     message_type: MessageType = MessageType.text
     file_id: Optional[str] = None
     reply_to_id: Optional[str] = None
+    # E2E encryption fields
+    encrypted_content: Optional[str] = None
+    encryption_version: int = 0  # 0=plaintext, 1=E2E
+    sender_key_id: Optional[str] = None
+    ephemeral_public_key: Optional[str] = None
 
 
 class MessageUpdate(BaseModel):
@@ -31,6 +36,11 @@ class MessageResponse(BaseModel):
     is_deleted: bool
     created_at: datetime
     sender: Optional[UserPublicResponse] = None
+    # E2E encryption fields
+    encrypted_content: Optional[str] = None
+    encryption_version: int = 0
+    sender_key_id: Optional[str] = None
+    ephemeral_public_key: Optional[str] = None
 
 
 class MessageListResponse(BaseModel):

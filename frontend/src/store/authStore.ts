@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { authApi } from '../services/api'
 import wsService from '../services/websocket'
+import { useEncryptionStore } from './encryptionStore'
+import { keyStorageService } from '../services/keyStorage'
 
 interface User {
   id: string
@@ -9,6 +11,7 @@ interface User {
   display_name?: string
   avatar_url?: string
   is_online?: boolean
+  encryption_enabled?: boolean
 }
 
 interface AuthState {
@@ -16,6 +19,7 @@ interface AuthState {
   isAuthenticated: boolean
   isLoading: boolean
   error: string | null
+  currentPassword: string | null  // Temporarily stored for encryption init
   login: (email: string, password: string) => Promise<void>
   register: (email: string, password: string) => Promise<void>
   logout: () => void
@@ -27,6 +31,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   isAuthenticated: !!localStorage.getItem('access_token'),
   isLoading: false,
   error: null,
+  currentPassword: null,
 
   login: async (email, password) => {
     set({ isLoading: true, error: null })
@@ -40,7 +45,25 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       // Load user
       const { data: user } = await authApi.me()
-      set({ user, isAuthenticated: true, isLoading: false })
+      set({ user, isAuthenticated: true, isLoading: false, currentPassword: password })
+
+      // Initialize E2E encryption
+      const encryptionStore = useEncryptionStore.getState()
+      const hasKeys = await keyStorageService.hasStoredKeys()
+
+      if (hasKeys) {
+        // Load existing keys
+        try {
+          await encryptionStore.initialize(password)
+        } catch (error) {
+          console.warn('Failed to initialize encryption with stored keys:', error)
+          // Keys might be corrupted or password changed, generate new ones
+          await encryptionStore.generateKeys(password)
+        }
+      } else {
+        // Generate new keys for this user
+        await encryptionStore.generateKeys(password)
+      }
     } catch (error: any) {
       set({
         error: error.response?.data?.detail || 'Login failed',
@@ -62,7 +85,11 @@ export const useAuthStore = create<AuthState>((set) => ({
       wsService.connect(data.access_token)
 
       const { data: user } = await authApi.me()
-      set({ user, isAuthenticated: true, isLoading: false })
+      set({ user, isAuthenticated: true, isLoading: false, currentPassword: password })
+
+      // Generate new encryption keys for the new user
+      const encryptionStore = useEncryptionStore.getState()
+      await encryptionStore.generateKeys(password)
     } catch (error: any) {
       set({
         error: error.response?.data?.detail || 'Registration failed',
@@ -76,7 +103,9 @@ export const useAuthStore = create<AuthState>((set) => ({
     localStorage.removeItem('access_token')
     localStorage.removeItem('refresh_token')
     wsService.disconnect()
-    set({ user: null, isAuthenticated: false })
+
+    // Don't clear keys from IndexedDB - user might log back in
+    set({ user: null, isAuthenticated: false, currentPassword: null })
   },
 
   loadUser: async () => {
@@ -87,6 +116,10 @@ export const useAuthStore = create<AuthState>((set) => ({
       const { data: user } = await authApi.me()
       wsService.connect(token)
       set({ user, isAuthenticated: true })
+
+      // Note: Encryption won't be fully initialized until user provides password again
+      // This is intentional for security - we don't store the password
+      // They'll need to decrypt messages manually or re-login
     } catch {
       localStorage.removeItem('access_token')
       localStorage.removeItem('refresh_token')

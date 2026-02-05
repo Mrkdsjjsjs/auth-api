@@ -26,33 +26,56 @@ def search_users(
     **Search users by username or email**
 
     Search for users to start a conversation.
+    Supports @username tag search for exact matching.
 
-    - **q**: Search query (matches username or email)
+    - **q**: Search query (matches username or email). Use @username for exact username search.
     - **limit**: Max results (default 20)
     - **offset**: Pagination offset
     """
-    search_pattern = f"%{q}%"
-    query = select(User).where(
-        or_(
-            User.username.ilike(search_pattern),
-            User.email.ilike(search_pattern),
-            User.display_name.ilike(search_pattern)
-        ),
-        User.id != current_user.id
-    ).offset(offset).limit(limit)
+    # Check if searching by @username tag
+    if q.startswith("@"):
+        username_query = q[1:]  # Remove @ prefix
+        if username_query:
+            # Exact prefix match for @username search
+            query = select(User).where(
+                User.username.ilike(f"{username_query}%"),
+                User.id != current_user.id
+            ).offset(offset).limit(limit)
 
-    users = session.exec(query).all()
+            users = session.exec(query).all()
 
-    # Get total count
-    count_query = select(User).where(
-        or_(
-            User.username.ilike(search_pattern),
-            User.email.ilike(search_pattern),
-            User.display_name.ilike(search_pattern)
-        ),
-        User.id != current_user.id
-    )
-    total = len(session.exec(count_query).all())
+            count_query = select(User).where(
+                User.username.ilike(f"{username_query}%"),
+                User.id != current_user.id
+            )
+            total = len(session.exec(count_query).all())
+        else:
+            users = []
+            total = 0
+    else:
+        # Regular search across all fields
+        search_pattern = f"%{q}%"
+        query = select(User).where(
+            or_(
+                User.username.ilike(search_pattern),
+                User.email.ilike(search_pattern),
+                User.display_name.ilike(search_pattern)
+            ),
+            User.id != current_user.id
+        ).offset(offset).limit(limit)
+
+        users = session.exec(query).all()
+
+        # Get total count
+        count_query = select(User).where(
+            or_(
+                User.username.ilike(search_pattern),
+                User.email.ilike(search_pattern),
+                User.display_name.ilike(search_pattern)
+            ),
+            User.id != current_user.id
+        )
+        total = len(session.exec(count_query).all())
 
     return UserSearchResponse(
         users=[UserPublicResponse.model_validate(u) for u in users],

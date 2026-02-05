@@ -3,6 +3,7 @@ import { useAuthStore } from './store/authStore'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import ChatPage from './pages/ChatPage'
+import ProfilePage from './pages/ProfilePage'
 
 function App() {
   const { isAuthenticated } = useAuthStore()
@@ -11,7 +12,9 @@ function App() {
     <Routes>
       <Route path="/login" element={!isAuthenticated ? <LoginPage /> : <Navigate to="/" />} />
       <Route path="/register" element={!isAuthenticated ? <RegisterPage /> : <Navigate to="/" />} />
-      <Route path="/*" element={isAuthenticated ? <ChatPage /> : <Navigate to="/login" />} />
+      <Route path="/profile" element={isAuthenticated ? <ProfilePage /> : <Navigate to="/login" />} />
+      <Route path="/chat" element={isAuthenticated ? <ChatPage /> : <Navigate to="/login" />} />
+      <Route path="/" element={isAuthenticated ? <Navigate to="/chat" /> : <Navigate to="/login" />} />
     </Routes>
   )
 }
