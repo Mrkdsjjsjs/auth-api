@@ -16,7 +16,7 @@ class Message(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     chat_id: str = Field(foreign_key="chat.id", index=True)
     sender_id: str = Field(foreign_key="user.id")
-    content: Optional[str] = Field(default=None)  # Plaintext in DB
+    content: Optional[str] = Field(default=None)
     message_type: MessageType = Field(default=MessageType.text)
     file_url: Optional[str] = Field(default=None)
     file_id: Optional[str] = Field(default=None, foreign_key="file.id")
@@ -24,3 +24,8 @@ class Message(SQLModel, table=True):
     is_edited: bool = Field(default=False)
     is_deleted: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    # Legacy encryption fields (kept for DB compatibility)
+    encryption_version: int = Field(default=0)
+    encrypted_content: Optional[str] = Field(default=None)
+    sender_key_id: Optional[str] = Field(default=None)
+    ephemeral_public_key: Optional[str] = Field(default=None)
