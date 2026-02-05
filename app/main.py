@@ -767,7 +767,7 @@ def landing():
 
 @app.get("/docs", include_in_schema=False)
 def custom_swagger_ui():
-    return get_swagger_ui_html(
+    html_response = get_swagger_ui_html(
         openapi_url="/openapi.json",
         title="🔐 Auth API - Swagger",
         swagger_css_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css",
@@ -784,7 +784,10 @@ def custom_swagger_ui():
             "defaultModelExpandDepth": 3,
             "persistAuthorization": True,
         },
-    ) + f"<style>{CUSTOM_CSS}</style>"
+    )
+    html_content = html_response.body.decode()
+    html_with_css = html_content.replace("</head>", f"<style>{CUSTOM_CSS}</style></head>")
+    return HTMLResponse(content=html_with_css)
 
 @app.get("/redoc", include_in_schema=False)
 def custom_redoc():
