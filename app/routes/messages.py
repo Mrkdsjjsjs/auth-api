@@ -104,7 +104,7 @@ def build_message_response(message: Message, session: Session, encrypt_for_user_
     })
 def get_messages(
     chat_id: str,
-    limit: int = Query(default=500, le=1000),
+    limit: int = Query(default=50, le=500),
     before: Optional[str] = None,
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
@@ -386,7 +386,7 @@ async def mark_read(
 def search_messages(
     q: str,
     chat_id: Optional[str] = None,
-    limit: int = Query(default=500, le=1000),
+    limit: int = Query(default=50, le=500),
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
 ):
