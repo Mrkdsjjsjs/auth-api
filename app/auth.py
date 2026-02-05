@@ -7,7 +7,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlmodel import Session, select
 from app.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE, REFRESH_TOKEN_EXPIRE
 from app.database import get_session
-from app.models import User
+from app.models.user import User
 import secrets
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

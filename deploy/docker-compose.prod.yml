@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: messenger-postgres
+    environment:
+      POSTGRES_USER: messenger
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-messenger_secure_password}
+      POSTGRES_DB: messenger
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U messenger"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: always
+    networks:
+      - messenger
+
+  redis:
+    image: redis:7-alpine
+    container_name: messenger-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_secure_password}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_secure_password}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: always
+    networks:
+      - messenger
+
+  backend:
+    image: messenger-backend:latest
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: messenger-backend
+    environment:
+      - DATABASE_URL=postgresql://messenger:${POSTGRES_PASSWORD:-messenger_secure_password}@postgres:5432/messenger
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_secure_password}@redis:6379/0
+      - SECRET_KEY=${SECRET_KEY}
+      - CORS_ORIGINS=https://gayauth228gay.duckdns.org
+    volumes:
+      - uploads:/app/app/static/uploads
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+    networks:
+      - messenger
+
+  frontend:
+    image: messenger-frontend:latest
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: messenger-frontend
+    ports:
+      - "127.0.0.1:3000:80"
+    depends_on:
+      - backend
+    restart: always
+    networks:
+      - messenger
+
+volumes:
+  postgres_data:
+  redis_data:
+  uploads:
+
+networks:
+  messenger:
+    driver: bridge

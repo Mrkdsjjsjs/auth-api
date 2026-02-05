@@ -1,41 +1,25 @@
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import SQLModel, create_engine, Session
-from sqlalchemy.pool import StaticPool
+from sqlmodel import select, Session
+
+from tests.conftest import test_engine
 from app.main import app
-from app.database import get_session
-from app.models import User
-
-# Use StaticPool to share the in-memory database across connections
-engine = create_engine(
-    "sqlite:///:memory:",
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-
-def override_get_session():
-    with Session(engine) as session:
-        yield session
-
-app.dependency_overrides[get_session] = override_get_session
-
-@pytest.fixture(autouse=True)
-def setup_db():
-    SQLModel.metadata.create_all(engine)
-    yield
-    SQLModel.metadata.drop_all(engine)
+from app.models.user import User
 
 client = TestClient(app)
+
 
 def test_register():
     r = client.post("/auth/register", json={"email": "test@example.com", "password": "secret123"})
     assert r.status_code == 201
     assert r.json()["email"] == "test@example.com"
 
+
 def test_register_duplicate():
     client.post("/auth/register", json={"email": "dup@example.com", "password": "secret123"})
     r = client.post("/auth/register", json={"email": "dup@example.com", "password": "secret123"})
     assert r.status_code == 400
+
 
 def test_login():
     client.post("/auth/register", json={"email": "login@example.com", "password": "secret123"})
@@ -44,9 +28,11 @@ def test_login():
     assert "access_token" in r.json()
     assert "refresh_token" in r.json()
 
+
 def test_login_invalid():
     r = client.post("/auth/login", json={"email": "nope@example.com", "password": "wrong"})
     assert r.status_code == 401
+
 
 def test_me():
     client.post("/auth/register", json={"email": "me@example.com", "password": "secret123"})
@@ -55,6 +41,7 @@ def test_me():
     assert r.status_code == 200
     assert r.json()["email"] == "me@example.com"
 
+
 def test_refresh():
     client.post("/auth/register", json={"email": "refresh@example.com", "password": "secret123"})
     tokens = client.post("/auth/login", json={"email": "refresh@example.com", "password": "secret123"}).json()
@@ -62,15 +49,16 @@ def test_refresh():
     assert r.status_code == 200
     assert "access_token" in r.json()
 
+
 def test_forgot():
     r = client.post("/auth/forgot", json={"email": "any@example.com"})
     assert r.status_code == 200
 
+
 def test_reset():
     client.post("/auth/register", json={"email": "reset@example.com", "password": "old123"})
     client.post("/auth/forgot", json={"email": "reset@example.com"})
-    from sqlmodel import select
-    with Session(engine) as session:
+    with Session(test_engine) as session:
         user = session.exec(select(User).where(User.email == "reset@example.com")).first()
         token = user.reset_token
     r = client.post("/auth/reset", json={"token": token, "new_password": "new123"})
