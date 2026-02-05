@@ -8,7 +8,9 @@ class WebSocketService {
   private reconnectDelay = 1000
 
   connect(token: string) {
-    const wsUrl = import.meta.env.VITE_WS_URL || `ws://${window.location.host}`
+    // Use wss:// for HTTPS, ws:// for HTTP
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const wsUrl = import.meta.env.VITE_WS_URL || `${protocol}//${window.location.host}`
     this.ws = new WebSocket(`${wsUrl}/ws/${token}`)
 
     this.ws.onopen = () => {
