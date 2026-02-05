@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './store/authStore'
 import LoginPage from './pages/LoginPage'
@@ -6,7 +7,27 @@ import ChatPage from './pages/ChatPage'
 import ProfilePage from './pages/ProfilePage'
 
 function App() {
-  const { isAuthenticated } = useAuthStore()
+  const { isAuthenticated, isLoading, loadUser } = useAuthStore()
+
+  useEffect(() => {
+    loadUser()
+  }, [])
+
+  // Show loading while checking auth status
+  if (isLoading) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        background: 'var(--bg-primary)',
+        color: 'var(--text-primary)'
+      }}>
+        Loading...
+      </div>
+    )
+  }
 
   return (
     <Routes>

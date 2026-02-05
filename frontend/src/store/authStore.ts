@@ -28,8 +28,8 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
-  isAuthenticated: !!localStorage.getItem('access_token'),
-  isLoading: false,
+  isAuthenticated: false,  // Will be set by loadUser
+  isLoading: true,  // Start loading until we check auth
   error: null,
   currentPassword: null,
 
@@ -118,13 +118,14 @@ export const useAuthStore = create<AuthState>((set) => ({
   loadUser: async () => {
     // Try to load user - cookies will be sent automatically
     // Also check localStorage for WebSocket token
+    set({ isLoading: true })
     try {
       const { data: user } = await authApi.me()
       const token = localStorage.getItem('access_token')
       if (token) {
         wsService.connect(token)
       }
-      set({ user, isAuthenticated: true })
+      set({ user, isAuthenticated: true, isLoading: false })
 
       // Note: Encryption won't be fully initialized until user provides password again
       // This is intentional for security - we don't store the password
@@ -132,7 +133,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     } catch {
       localStorage.removeItem('access_token')
       localStorage.removeItem('refresh_token')
-      set({ user: null, isAuthenticated: false })
+      set({ user: null, isAuthenticated: false, isLoading: false })
     }
   },
 }))
