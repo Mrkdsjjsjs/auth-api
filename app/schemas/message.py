@@ -6,15 +6,11 @@ from app.schemas.user import UserPublicResponse
 
 
 class MessageCreate(BaseModel):
+    """Client sends plaintext - server encrypts when delivering"""
     content: Optional[str] = None
     message_type: MessageType = MessageType.text
     file_id: Optional[str] = None
     reply_to_id: Optional[str] = None
-    # E2E encryption fields
-    encrypted_content: Optional[str] = None
-    encryption_version: int = 0  # 0=plaintext, 1=E2E
-    sender_key_id: Optional[str] = None
-    ephemeral_public_key: Optional[str] = None
 
 
 class MessageUpdate(BaseModel):
@@ -22,25 +18,25 @@ class MessageUpdate(BaseModel):
 
 
 class MessageResponse(BaseModel):
+    """Response includes encryption fields added by server"""
     model_config = ConfigDict(from_attributes=True)
 
     id: str
     chat_id: str
     sender_id: str
-    content: Optional[str]
+    content: Optional[str] = None  # None if encrypted
     message_type: MessageType
-    file_url: Optional[str]
-    file_id: Optional[str]
-    reply_to_id: Optional[str]
+    file_url: Optional[str] = None
+    file_id: Optional[str] = None
+    reply_to_id: Optional[str] = None
     is_edited: bool
     is_deleted: bool
     created_at: datetime
     sender: Optional[UserPublicResponse] = None
-    # E2E encryption fields
+    # Encryption fields (added by server when sending to client)
     encrypted_content: Optional[str] = None
-    encryption_version: int = 0
-    sender_key_id: Optional[str] = None
     ephemeral_public_key: Optional[str] = None
+    encryption_version: int = 0
 
 
 class MessageListResponse(BaseModel):

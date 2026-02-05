@@ -2,7 +2,6 @@ import { create } from 'zustand'
 import { chatsApi, messagesApi } from '../services/api'
 import wsService from '../services/websocket'
 import { useEncryptionStore } from './encryptionStore'
-import { useAuthStore } from './authStore'
 
 interface User {
   id: string
@@ -16,17 +15,16 @@ interface Message {
   id: string
   chat_id: string
   sender_id: string
-  content: string
+  content: string | null
   message_type: string
   is_edited: boolean
   is_deleted: boolean
   created_at: string
   sender?: User
-  // E2E encryption fields
+  // Encryption fields from server
   encrypted_content?: string | null
-  encryption_version?: number
-  sender_key_id?: string | null
   ephemeral_public_key?: string | null
+  encryption_version?: number
 }
 
 interface Chat {
@@ -53,6 +51,34 @@ interface ChatState {
   setupWebSocket: () => void
 }
 
+/**
+ * Decrypt a message if it's encrypted
+ */
+async function decryptMessage(message: Message): Promise<Message> {
+  // If not encrypted, return as-is
+  if (!message.encryption_version || message.encryption_version === 0 || !message.encrypted_content) {
+    return message
+  }
+
+  const encryptionStore = useEncryptionStore.getState()
+
+  // If encryption not initialized, show placeholder
+  if (!encryptionStore.isInitialized || !encryptionStore.hasKeys) {
+    return { ...message, content: '[Encrypted - login to decrypt]' }
+  }
+
+  try {
+    const decryptedContent = await encryptionStore.decryptMessage({
+      encrypted_content: message.encrypted_content,
+      ephemeral_public_key: message.ephemeral_public_key,
+    })
+    return { ...message, content: decryptedContent }
+  } catch (error) {
+    console.warn('Failed to decrypt message:', message.id, error)
+    return { ...message, content: '[Decryption failed]' }
+  }
+}
+
 export const useChatStore = create<ChatState>((set, get) => ({
   chats: [],
   currentChatId: null,
@@ -74,46 +100,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     try {
       const { data } = await messagesApi.list(chatId)
-      const { chats } = get()
-      const chat = chats.find(c => c.id === chatId)
 
-      // Decrypt messages if needed
-      const encryptionStore = useEncryptionStore.getState()
-      let decryptedMessages = data.messages
-
-      if (encryptionStore.isInitialized && encryptionStore.hasKeys && chat) {
-        decryptedMessages = await Promise.all(
-          data.messages.map(async (message: Message) => {
-            if (message.encryption_version && message.encryption_version > 0 && message.encrypted_content) {
-              try {
-                const decryptedContent = await encryptionStore.decryptMessage(
-                  {
-                    encrypted_content: message.encrypted_content,
-                    encryption_version: message.encryption_version,
-                    sender_id: message.sender_id,
-                    chat_id: message.chat_id,
-                    ephemeral_public_key: message.ephemeral_public_key,
-                  },
-                  chat.type as 'direct' | 'group'
-                )
-                return { ...message, content: decryptedContent }
-              } catch (error) {
-                console.warn('Failed to decrypt message:', message.id, error)
-                return { ...message, content: '[Encrypted message - unable to decrypt]' }
-              }
-            }
-            return message
-          })
-        )
-      } else {
-        // Mark encrypted messages as such
-        decryptedMessages = data.messages.map((message: Message) => {
-          if (message.encryption_version && message.encryption_version > 0 && message.encrypted_content) {
-            return { ...message, content: '[Encrypted message]' }
-          }
-          return message
-        })
-      }
+      // Decrypt all messages
+      const decryptedMessages = await Promise.all(
+        data.messages.map((msg: Message) => decryptMessage(msg))
+      )
 
       set({ messages: decryptedMessages, isLoading: false })
 
@@ -136,58 +127,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   sendMessage: async (content) => {
-    const { currentChatId, chats } = get()
+    const { currentChatId } = get()
     if (!currentChatId || !content.trim()) return
 
-    const chat = chats.find(c => c.id === currentChatId)
-    if (!chat) return
-
     try {
-      const encryptionStore = useEncryptionStore.getState()
-      const authStore = useAuthStore.getState()
-
-      // Try to encrypt the message if encryption is initialized
-      if (encryptionStore.isInitialized && encryptionStore.hasKeys) {
-        try {
-          const chatType = chat.type as 'direct' | 'group'
-
-          // For direct chats, find the other user
-          let recipientUserId: string | undefined
-          if (chatType === 'direct' && authStore.user) {
-            const otherMember = chat.members.find(m => m.user_id !== authStore.user?.id)
-            recipientUserId = otherMember?.user_id
-          }
-
-          const encrypted = await encryptionStore.encryptMessage(
-            currentChatId,
-            content,
-            chatType,
-            recipientUserId
-          )
-
-          // Convert to snake_case for API
-          const { data } = await messagesApi.send(currentChatId, '', undefined, {
-            encrypted_content: encrypted.encryptedContent,
-            encryption_version: encrypted.encryptionVersion,
-            sender_key_id: encrypted.senderKeyId,
-            ephemeral_public_key: encrypted.ephemeralPublicKey,
-          })
-          // Store decrypted content locally for display
-          const messageWithContent = { ...data, content }
-          set((state) => ({
-            messages: [...state.messages, messageWithContent],
-          }))
-          return
-        } catch (error) {
-          console.warn('Encryption failed, sending as plaintext:', error)
-        }
-      }
-
-      // Fallback to plaintext
-      const { data } = await messagesApi.send(currentChatId, content)
-      set((state) => ({
-        messages: [...state.messages, data],
-      }))
+      // Send plaintext - server encrypts when delivering
+      await messagesApi.send(currentChatId, content)
+      // Message will come back via WebSocket
     } catch (error) {
       console.error('Failed to send message:', error)
     }
@@ -207,49 +153,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   setupWebSocket: () => {
-    // Handle new messages
+    // Handle new messages (already encrypted for us by server)
     wsService.on('new_message', async (data) => {
       const { currentChatId, chats } = get()
-      let message = data.message
 
-      // Try to decrypt if message is encrypted
-      if (message.encryption_version && message.encryption_version > 0 && message.encrypted_content) {
-        const encryptionStore = useEncryptionStore.getState()
-        const chat = chats.find(c => c.id === message.chat_id)
+      // Decrypt the message
+      const decryptedMessage = await decryptMessage(data.message)
 
-        if (encryptionStore.isInitialized && encryptionStore.hasKeys && chat) {
-          try {
-            const decryptedContent = await encryptionStore.decryptMessage(
-              {
-                encrypted_content: message.encrypted_content,
-                encryption_version: message.encryption_version,
-                sender_id: message.sender_id,
-                chat_id: message.chat_id,
-                ephemeral_public_key: message.ephemeral_public_key,
-              },
-              chat.type as 'direct' | 'group'
-            )
-            message = { ...message, content: decryptedContent }
-          } catch (error) {
-            console.warn('Failed to decrypt message:', error)
-            message = { ...message, content: '[Encrypted message - unable to decrypt]' }
-          }
-        } else {
-          message = { ...message, content: '[Encrypted message]' }
+      if (decryptedMessage.chat_id === currentChatId) {
+        // Check if message already exists (avoid duplicates)
+        const exists = get().messages.some(m => m.id === decryptedMessage.id)
+        if (!exists) {
+          set((state) => ({
+            messages: [...state.messages, decryptedMessage],
+          }))
         }
-      }
-
-      if (message.chat_id === currentChatId) {
-        set((state) => ({
-          messages: [...state.messages, message],
-        }))
         // Mark as read
-        messagesApi.markRead(message.id)
+        messagesApi.markRead(decryptedMessage.id)
       } else {
         // Update unread count
         set({
           chats: chats.map((c) =>
-            c.id === message.chat_id
+            c.id === decryptedMessage.chat_id
               ? { ...c, unread_count: c.unread_count + 1 }
               : c
           ),
@@ -258,10 +183,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     })
 
     // Handle message edits
-    wsService.on('message_edited', (data) => {
+    wsService.on('message_edited', async (data) => {
+      const decryptedMessage = await decryptMessage(data.message)
       set((state) => ({
         messages: state.messages.map((m) =>
-          m.id === data.message.id ? data.message : m
+          m.id === decryptedMessage.id ? decryptedMessage : m
         ),
       }))
     })

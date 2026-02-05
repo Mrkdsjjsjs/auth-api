@@ -6,42 +6,63 @@ from app.database import get_session
 from app.models.user import User
 from app.models.chat import Chat, ChatMember
 from app.models.message import Message
+from app.models.encryption import UserKey
 from app.schemas.message import (
     MessageCreate, MessageUpdate, MessageResponse, MessageListResponse
 )
 from app.schemas.user import UserPublicResponse
 from app.auth import get_current_user
 from app.services.websocket import connection_manager
+from app.services.encryption_service import encryption_service
 
 router = APIRouter(tags=["messages"])
 
 
-def get_message_response(message: Message, session: Session) -> MessageResponse:
-    """Helper to build MessageResponse with sender info"""
+def get_user_public_key(user_id: str, session: Session) -> Optional[str]:
+    """Get user's active public key for encryption"""
+    user_key = session.exec(
+        select(UserKey).where(
+            UserKey.user_id == user_id,
+            UserKey.key_type == "identity",
+            UserKey.is_active == True
+        )
+    ).first()
+    return user_key.public_key if user_key else None
+
+
+def build_message_response(message: Message, session: Session, encrypt_for_user_id: Optional[str] = None) -> dict:
+    """Build message response dict, optionally encrypting for recipient"""
     sender = session.get(User, message.sender_id)
-    return MessageResponse(
-        id=message.id,
-        chat_id=message.chat_id,
-        sender_id=message.sender_id,
-        content=message.content if not message.is_deleted else None,
-        message_type=message.message_type,
-        file_url=message.file_url if not message.is_deleted else None,
-        file_id=message.file_id,
-        reply_to_id=message.reply_to_id,
-        is_edited=message.is_edited,
-        is_deleted=message.is_deleted,
-        created_at=message.created_at,
-        sender=UserPublicResponse.model_validate(sender) if sender else None,
-        # E2E encryption fields
-        encrypted_content=message.encrypted_content if not message.is_deleted else None,
-        encryption_version=message.encryption_version,
-        sender_key_id=message.sender_key_id,
-        ephemeral_public_key=message.ephemeral_public_key,
-    )
+
+    response = {
+        "id": message.id,
+        "chat_id": message.chat_id,
+        "sender_id": message.sender_id,
+        "content": message.content if not message.is_deleted else None,
+        "message_type": message.message_type,
+        "file_url": message.file_url if not message.is_deleted else None,
+        "file_id": message.file_id,
+        "reply_to_id": message.reply_to_id,
+        "is_edited": message.is_edited,
+        "is_deleted": message.is_deleted,
+        "created_at": message.created_at.isoformat(),
+        "sender": UserPublicResponse.model_validate(sender).model_dump() if sender else None,
+        "encrypted_content": None,
+        "ephemeral_public_key": None,
+        "encryption_version": 0,
+    }
+
+    # Encrypt for recipient if they have a public key
+    if encrypt_for_user_id and not message.is_deleted and message.content:
+        public_key = get_user_public_key(encrypt_for_user_id, session)
+        if public_key:
+            response = encryption_service.encrypt_message_response(response, public_key)
+
+    return response
 
 
 @router.get("/api/chats/{chat_id}/messages", response_model=MessageListResponse,
-    summary="📜 Get messages",
+    summary="Get messages",
     responses={
         200: {"description": "Messages returned"},
         403: {"description": "Not a member of this chat"},
@@ -54,12 +75,8 @@ def get_messages(
     current_user: User = Depends(get_current_user)
 ):
     """
-    **Get chat messages with cursor pagination**
-
-    Returns messages in reverse chronological order.
-
-    - **limit**: Max messages to return (default 50, max 100)
-    - **before**: Message ID cursor for pagination
+    Get chat messages with cursor pagination.
+    Messages are encrypted for the requesting user.
     """
     chat = session.get(Chat, chat_id)
     if not chat:
@@ -90,7 +107,11 @@ def get_messages(
     # Reverse to get chronological order
     messages = list(reversed(messages))
 
-    message_responses = [get_message_response(msg, session) for msg in messages]
+    # Build responses with encryption for current user
+    message_responses = [
+        build_message_response(msg, session, encrypt_for_user_id=current_user.id)
+        for msg in messages
+    ]
 
     return MessageListResponse(
         messages=message_responses,
@@ -101,7 +122,7 @@ def get_messages(
 
 @router.post("/api/chats/{chat_id}/messages", response_model=MessageResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="✉️ Send message",
+    summary="Send message",
     responses={
         201: {"description": "Message sent"},
         403: {"description": "Not a member of this chat"},
@@ -113,14 +134,8 @@ async def send_message(
     current_user: User = Depends(get_current_user)
 ):
     """
-    **Send a message to chat**
-
-    Send text or file message to a chat.
-
-    - **content**: Text content (for text messages)
-    - **message_type**: "text", "image", "file", or "voice"
-    - **file_id**: File ID (for file messages)
-    - **reply_to_id**: Message ID to reply to (optional)
+    Send a message to chat (plaintext).
+    Server stores plaintext and encrypts when delivering to recipients.
     """
     chat = session.get(Chat, chat_id)
     if not chat:
@@ -147,6 +162,7 @@ async def send_message(
         if file_record:
             file_url = file_record.url
 
+    # Store message as plaintext
     message = Message(
         chat_id=chat_id,
         sender_id=current_user.id,
@@ -155,11 +171,6 @@ async def send_message(
         file_id=data.file_id,
         file_url=file_url,
         reply_to_id=data.reply_to_id,
-        # E2E encryption fields
-        encrypted_content=data.encrypted_content,
-        encryption_version=data.encryption_version,
-        sender_key_id=data.sender_key_id,
-        ephemeral_public_key=data.ephemeral_public_key,
     )
     session.add(message)
 
@@ -170,23 +181,31 @@ async def send_message(
     session.commit()
     session.refresh(message)
 
-    response = get_message_response(message, session)
+    # Get all chat members for WebSocket broadcast
+    members = session.exec(
+        select(ChatMember).where(ChatMember.chat_id == chat_id)
+    ).all()
 
-    # Broadcast to WebSocket connections
-    await connection_manager.send_to_chat(
-        chat_id,
-        {
-            "type": "new_message",
-            "message": response.model_dump(mode="json")
-        },
-        exclude_user=None
-    )
+    # Send encrypted message to each member via WebSocket
+    for chat_member in members:
+        member_user_id = chat_member.user_id
+        encrypted_response = build_message_response(message, session, encrypt_for_user_id=member_user_id)
 
+        await connection_manager.send_to_user(
+            member_user_id,
+            {
+                "type": "new_message",
+                "message": encrypted_response
+            }
+        )
+
+    # Return encrypted response for sender
+    response = build_message_response(message, session, encrypt_for_user_id=current_user.id)
     return response
 
 
 @router.put("/api/messages/{message_id}", response_model=MessageResponse,
-    summary="✏️ Edit message",
+    summary="Edit message",
     responses={
         200: {"description": "Message edited"},
         403: {"description": "Cannot edit this message"},
@@ -197,11 +216,7 @@ async def edit_message(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    **Edit a message**
-
-    Can only edit your own text messages.
-    """
+    """Edit a message. Can only edit your own text messages."""
     message = session.get(Message, message_id)
     if not message:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
@@ -218,22 +233,27 @@ async def edit_message(
     session.commit()
     session.refresh(message)
 
-    response = get_message_response(message, session)
+    # Broadcast edit to all chat members
+    members = session.exec(
+        select(ChatMember).where(ChatMember.chat_id == message.chat_id)
+    ).all()
 
-    # Broadcast edit
-    await connection_manager.send_to_chat(
-        message.chat_id,
-        {
-            "type": "message_edited",
-            "message": response.model_dump(mode="json")
-        }
-    )
+    for chat_member in members:
+        encrypted_response = build_message_response(message, session, encrypt_for_user_id=chat_member.user_id)
+        await connection_manager.send_to_user(
+            chat_member.user_id,
+            {
+                "type": "message_edited",
+                "message": encrypted_response
+            }
+        )
 
+    response = build_message_response(message, session, encrypt_for_user_id=current_user.id)
     return response
 
 
 @router.delete("/api/messages/{message_id}", status_code=status.HTTP_204_NO_CONTENT,
-    summary="🗑️ Delete message",
+    summary="Delete message",
     responses={
         204: {"description": "Message deleted"},
         403: {"description": "Cannot delete this message"},
@@ -243,11 +263,7 @@ async def delete_message(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    **Delete a message**
-
-    Soft deletes the message. Only sender can delete.
-    """
+    """Delete a message. Soft deletes the message. Only sender can delete."""
     message = session.get(Message, message_id)
     if not message:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
@@ -273,7 +289,7 @@ async def delete_message(
 
 
 @router.post("/api/messages/{message_id}/read", status_code=status.HTTP_204_NO_CONTENT,
-    summary="✓ Mark as read",
+    summary="Mark as read",
     responses={
         204: {"description": "Marked as read"},
     })
@@ -282,11 +298,7 @@ async def mark_read(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    **Mark message as read**
-
-    Updates the user's last read message in the chat.
-    """
+    """Mark message as read. Updates the user's last read message in the chat."""
     message = session.get(Message, message_id)
     if not message:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
@@ -319,7 +331,7 @@ async def mark_read(
 
 
 @router.get("/api/messages/search", response_model=MessageListResponse,
-    summary="🔍 Search messages",
+    summary="Search messages",
     responses={
         200: {"description": "Search results returned"},
     })
@@ -330,15 +342,7 @@ def search_messages(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    **Search messages**
-
-    Search for messages across all chats or within a specific chat.
-
-    - **q**: Search query
-    - **chat_id**: Optional chat to search in
-    - **limit**: Max results (default 50, max 100)
-    """
+    """Search for messages across all chats or within a specific chat."""
     # Get user's chat IDs
     member_query = select(ChatMember.chat_id).where(ChatMember.user_id == current_user.id)
     user_chat_ids = session.exec(member_query).all()
@@ -360,7 +364,11 @@ def search_messages(
     query = query.order_by(Message.created_at.desc()).limit(limit)
     messages = session.exec(query).all()
 
-    message_responses = [get_message_response(msg, session) for msg in messages]
+    # Encrypt search results for current user
+    message_responses = [
+        build_message_response(msg, session, encrypt_for_user_id=current_user.id)
+        for msg in messages
+    ]
 
     return MessageListResponse(
         messages=message_responses,
