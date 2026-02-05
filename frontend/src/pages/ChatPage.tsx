@@ -212,7 +212,9 @@ export default function ChatPage() {
       )
 
       // Create blob and download
-      const blob = new Blob([decryptedFile.buffer], { type: fileInfo.content_type })
+      const arrayBuffer = new ArrayBuffer(decryptedFile.byteLength)
+      new Uint8Array(arrayBuffer).set(decryptedFile)
+      const blob = new Blob([arrayBuffer], { type: fileInfo.content_type })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
