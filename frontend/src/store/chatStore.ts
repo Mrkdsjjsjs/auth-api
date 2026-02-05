@@ -327,8 +327,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
         original_filename: file.name,
         content_type: file.type,
         file_nonce: encryptedResult.fileNonce,
-        key_for_recipient: encryptedResult.keyForRecipient,
-        key_for_sender: encryptedResult.keyForSender,
+        key_for_recipient: {
+          encrypted_key: encryptedResult.keyForRecipient.encryptedKey,
+          key_nonce: encryptedResult.keyForRecipient.keyNonce,
+          ephemeral_public_key: encryptedResult.keyForRecipient.ephemeralPublicKey,
+        },
+        key_for_sender: {
+          encrypted_key: encryptedResult.keyForSender.encryptedKey,
+          key_nonce: encryptedResult.keyForSender.keyNonce,
+          ephemeral_public_key: encryptedResult.keyForSender.ephemeralPublicKey,
+        },
         recipient_user_id: recipientUserId,
         chat_id: currentChatId,
       })
