@@ -39,18 +39,27 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
       const hasKeys = await keyStorageService.hasStoredKeys()
 
       if (hasKeys) {
-        const keyPair = await keyStorageService.loadKeys()
-        const currentKeyId = await keyStorageService.getCurrentKeyId()
+        try {
+          const keyPair = await keyStorageService.loadKeys()
+          const currentKeyId = await keyStorageService.getCurrentKeyId()
 
-        set({
-          isInitialized: true,
-          hasKeys: true,
-          identityKeyPair: keyPair,
-          currentKeyId,
-        })
-        console.log('Encryption initialized from IndexedDB')
+          set({
+            isInitialized: true,
+            hasKeys: true,
+            identityKeyPair: keyPair,
+            currentKeyId,
+          })
+          console.log('Encryption initialized from IndexedDB')
+        } catch (loadError) {
+          // Old format keys - clear and regenerate
+          console.warn('Old key format detected, regenerating...', loadError)
+          await keyStorageService.clearKeys()
+          await get().generateKeys()
+        }
       } else {
-        set({ isInitialized: false, hasKeys: false })
+        // No keys - generate new ones
+        console.log('No keys found, generating...')
+        await get().generateKeys()
       }
     } catch (error) {
       console.error('Failed to initialize encryption:', error)
