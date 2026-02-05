@@ -6,11 +6,14 @@ from app.schemas.user import UserPublicResponse
 
 
 class MessageCreate(BaseModel):
-    """Client sends plaintext - server encrypts when delivering"""
-    content: Optional[str] = None
+    """Client can send encrypted or plaintext messages"""
+    content: Optional[str] = None  # Plaintext fallback
     message_type: MessageType = MessageType.text
     file_id: Optional[str] = None
     reply_to_id: Optional[str] = None
+    # Client-side encryption fields
+    encrypted_content: Optional[str] = None  # ciphertext:nonce format
+    ephemeral_public_key: Optional[str] = None
 
 
 class MessageUpdate(BaseModel):

@@ -44,6 +44,32 @@ export class CryptoService {
     }
     return encodeUTF8(decrypted)
   }
+
+  /**
+   * Encrypt a message for a recipient using their public key
+   * Uses ephemeral key pair for forward secrecy
+   */
+  encryptForRecipient(
+    plaintext: string,
+    recipientPublicKey: Uint8Array,
+    senderSecretKey: Uint8Array
+  ): { ciphertext: string; nonce: string; ephemeralPublicKey: string } {
+    // Generate ephemeral key pair for this message
+    const ephemeralKeyPair = nacl.box.keyPair()
+
+    // Generate random nonce
+    const nonce = nacl.randomBytes(nacl.box.nonceLength)
+
+    // Encrypt the message
+    const messageBytes = new TextEncoder().encode(plaintext)
+    const ciphertext = nacl.box(messageBytes, nonce, recipientPublicKey, ephemeralKeyPair.secretKey)
+
+    return {
+      ciphertext: uint8ArrayToBase64(ciphertext),
+      nonce: uint8ArrayToBase64(nonce),
+      ephemeralPublicKey: uint8ArrayToBase64(ephemeralKeyPair.publicKey),
+    }
+  }
 }
 
 // Export singleton instance

@@ -135,7 +135,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   sendMessage: async (content) => {
-    const { currentChatId, messages } = get()
+    const { currentChatId, messages, chats } = get()
     if (!currentChatId || !content.trim()) return
 
     // Get current user from authStore
@@ -165,8 +165,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ messages: [...messages, optimisticMessage] })
 
     try {
-      // Send plaintext - server encrypts when delivering
-      const { data } = await messagesApi.send(currentChatId, content)
+      // Get recipient user ID (other member in chat)
+      const currentChat = chats.find(c => c.id === currentChatId)
+      const recipientMember = currentChat?.members.find(m => m.user_id !== currentUser?.id)
+      const recipientUserId = recipientMember?.user_id
+
+      // Try to encrypt message for recipient
+      let encrypted = null
+      if (recipientUserId) {
+        const encryptionStore = (await import('./encryptionStore')).useEncryptionStore.getState()
+        encrypted = await encryptionStore.encryptMessage(content, recipientUserId)
+        if (encrypted) {
+          console.log('[Chat] Message encrypted for recipient')
+        }
+      }
+
+      // Send message (encrypted if possible, plaintext as fallback)
+      const { data } = await messagesApi.send(currentChatId, content, undefined, encrypted || undefined)
 
       // Replace temp message with real one (or remove if it comes via WebSocket)
       set((state) => ({

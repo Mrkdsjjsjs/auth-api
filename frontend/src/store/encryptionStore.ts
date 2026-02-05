@@ -13,6 +13,7 @@ interface EncryptionState {
   hasKeys: boolean
   currentKeyId: string | null
   identityKeyPair: IdentityKeyPair | null
+  recipientKeysCache: Map<string, string>
 
   initialize: () => Promise<void>
   generateKeys: () => Promise<void>
@@ -20,6 +21,11 @@ interface EncryptionState {
     encrypted_content?: string | null
     ephemeral_public_key?: string | null
   }) => Promise<string>
+  encryptMessage: (plaintext: string, recipientUserId: string) => Promise<{
+    encrypted_content: string
+    ephemeral_public_key: string
+  } | null>
+  getRecipientPublicKey: (userId: string) => Promise<string | null>
   clearKeys: () => void
 }
 
@@ -28,6 +34,7 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
   hasKeys: false,
   currentKeyId: null,
   identityKeyPair: null,
+  recipientKeysCache: new Map(),
 
   initialize: async () => {
     console.log('[Encryption] Starting initialization...')
@@ -118,6 +125,58 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
       ephemeralPublicKey,
       identityKeyPair.secretKey
     )
+  },
+
+  getRecipientPublicKey: async (userId: string) => {
+    const { recipientKeysCache } = get()
+
+    // Check cache first
+    if (recipientKeysCache.has(userId)) {
+      return recipientKeysCache.get(userId)!
+    }
+
+    try {
+      const { data } = await keysApi.getUserKey(userId)
+      if (data.public_key) {
+        recipientKeysCache.set(userId, data.public_key)
+        return data.public_key
+      }
+    } catch (error) {
+      console.warn('[Encryption] Failed to get recipient public key:', error)
+    }
+    return null
+  },
+
+  encryptMessage: async (plaintext: string, recipientUserId: string) => {
+    const { identityKeyPair, getRecipientPublicKey } = get()
+
+    if (!identityKeyPair) {
+      console.warn('[Encryption] No identity key pair')
+      return null
+    }
+
+    const recipientPublicKeyB64 = await getRecipientPublicKey(recipientUserId)
+    if (!recipientPublicKeyB64) {
+      console.warn('[Encryption] Recipient has no public key')
+      return null
+    }
+
+    try {
+      const recipientPublicKey = base64ToUint8Array(recipientPublicKeyB64)
+      const encrypted = cryptoService.encryptForRecipient(
+        plaintext,
+        recipientPublicKey,
+        identityKeyPair.secretKey
+      )
+
+      return {
+        encrypted_content: `${encrypted.ciphertext}:${encrypted.nonce}`,
+        ephemeral_public_key: encrypted.ephemeralPublicKey,
+      }
+    } catch (error) {
+      console.error('[Encryption] Failed to encrypt message:', error)
+      return null
+    }
   },
 
   clearKeys: () => {

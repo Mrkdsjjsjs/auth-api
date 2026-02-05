@@ -81,14 +81,19 @@ export const chatsApi = {
   get: (id: string) => api.get(`/api/chats/${id}`),
 }
 
-// Messages - plaintext, server encrypts when delivering
+// Messages - E2E encrypted
 export const messagesApi = {
   list: (chatId: string, before?: string) =>
     api.get(`/api/chats/${chatId}/messages${before ? `?before=${before}` : ''}`),
-  send: (chatId: string, content: string, replyToId?: string) =>
+  send: (chatId: string, content: string, replyToId?: string, encrypted?: {
+    encrypted_content: string
+    ephemeral_public_key: string
+  }) =>
     api.post(`/api/chats/${chatId}/messages`, {
-      content,
+      content: encrypted ? null : content,
       reply_to_id: replyToId,
+      encrypted_content: encrypted?.encrypted_content,
+      ephemeral_public_key: encrypted?.ephemeral_public_key,
     }),
   edit: (messageId: string, content: string) =>
     api.put(`/api/messages/${messageId}`, { content }),

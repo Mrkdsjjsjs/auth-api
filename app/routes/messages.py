@@ -52,7 +52,14 @@ def build_message_response(message: Message, session: Session, encrypt_for_user_
         "encryption_version": 0,
     }
 
-    # Encrypt for recipient if they have a public key
+    # If message is already client-encrypted, send as-is
+    if message.encryption_version > 0 and message.encrypted_content:
+        response["encrypted_content"] = message.encrypted_content
+        response["ephemeral_public_key"] = message.ephemeral_public_key
+        response["encryption_version"] = message.encryption_version
+        return response
+
+    # Server-side encryption: encrypt for recipient if they have a public key
     if encrypt_for_user_id and not message.is_deleted and message.content:
         public_key = get_user_public_key(encrypt_for_user_id, session)
         if public_key:
@@ -162,15 +169,22 @@ async def send_message(
         if file_record:
             file_url = file_record.url
 
-    # Store message as plaintext
+    # Check if message is client-encrypted
+    is_client_encrypted = bool(data.encrypted_content and data.ephemeral_public_key)
+
+    # Store message
     message = Message(
         chat_id=chat_id,
         sender_id=current_user.id,
-        content=data.content,
+        content=data.content if not is_client_encrypted else None,  # Don't store plaintext if encrypted
         message_type=data.message_type,
         file_id=data.file_id,
         file_url=file_url,
         reply_to_id=data.reply_to_id,
+        # Client encryption fields
+        encrypted_content=data.encrypted_content if is_client_encrypted else None,
+        ephemeral_public_key=data.ephemeral_public_key if is_client_encrypted else None,
+        encryption_version=1 if is_client_encrypted else 0,
     )
     session.add(message)
 
