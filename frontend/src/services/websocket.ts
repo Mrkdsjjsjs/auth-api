@@ -6,22 +6,34 @@ class WebSocketService {
   private reconnectAttempts = 0
   private maxReconnectAttempts = 5
   private reconnectDelay = 1000
+  private registeredEvents: Set<string> = new Set()
 
   connect(token: string) {
+    // Don't reconnect if already connected
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      console.log('[WS] Already connected, skipping reconnect')
+      return
+    }
+
     // Use wss:// for HTTPS, ws:// for HTTP
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsUrl = import.meta.env.VITE_WS_URL || `${protocol}//${window.location.host}`
-    this.ws = new WebSocket(`${wsUrl}/ws/${token}`)
+    const url = `${wsUrl}/ws/${token}`
+    console.log('[WS] Connecting to:', url)
+    this.ws = new WebSocket(url)
 
     this.ws.onopen = () => {
-      console.log('WebSocket connected')
+      console.log('[WS] Connected successfully')
+      console.log('[WS] Registered handlers:', Array.from(this.handlers.keys()))
       this.reconnectAttempts = 0
     }
 
     this.ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
+        console.log('[WS Raw] Received message type:', data.type, data)
         const handlers = this.handlers.get(data.type) || []
+        console.log('[WS Raw] Found', handlers.length, 'handlers for type:', data.type)
         handlers.forEach((handler) => handler(data))
 
         // Also call 'all' handlers
@@ -57,11 +69,22 @@ class WebSocketService {
     }
   }
 
-  on(event: string, handler: MessageHandler) {
+  on(event: string, handler: MessageHandler, unique = false) {
+    // If unique is true and we've already registered this event, skip
+    if (unique && this.registeredEvents.has(event)) {
+      console.log('[WS] Skipping duplicate registration for:', event)
+      return
+    }
+
     if (!this.handlers.has(event)) {
       this.handlers.set(event, [])
     }
     this.handlers.get(event)!.push(handler)
+
+    if (unique) {
+      this.registeredEvents.add(event)
+    }
+    console.log('[WS] Registered handler for:', event, 'total:', this.handlers.get(event)!.length)
   }
 
   off(event: string, handler: MessageHandler) {

@@ -20,6 +20,8 @@ class ConnectionManager:
             self.active_connections[user_id] = []
 
         self.active_connections[user_id].append(websocket)
+        print(f"[WS Manager] User {user_id} connected, total connections: {len(self.active_connections[user_id])}")
+        print(f"[WS Manager] All connected users: {list(self.active_connections.keys())}")
 
         # Set user online in Redis
         from app.services.redis_service import redis_service
@@ -37,16 +39,22 @@ class ConnectionManager:
     async def send_to_user(self, user_id: str, message: dict):
         """Send message to all connections of a specific user"""
         if user_id in self.active_connections:
+            num_connections = len(self.active_connections[user_id])
+            print(f"[WS Manager] Sending to user {user_id}, {num_connections} connections")
             disconnected = []
             for connection in self.active_connections[user_id]:
                 try:
                     await connection.send_json(message)
-                except Exception:
+                    print(f"[WS Manager] Sent message type {message.get('type')} to user {user_id}")
+                except Exception as e:
+                    print(f"[WS Manager] Failed to send to user {user_id}: {e}")
                     disconnected.append(connection)
 
             # Clean up disconnected connections
             for conn in disconnected:
                 self.disconnect(conn, user_id)
+        else:
+            print(f"[WS Manager] User {user_id} has no active connections")
 
     async def send_to_chat(
         self,

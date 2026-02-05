@@ -218,87 +218,107 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setupWebSocket: () => {
     // Handle new messages (already encrypted for us by server)
+    // Use unique=true to prevent duplicate registrations on re-render
     wsService.on('new_message', async (data) => {
-      const { currentChatId, chats, messages, loadChats } = get()
+      console.log('[WS] Received new_message:', data.message?.id)
 
-      // Check if chat exists in our list, if not reload chats
-      const chatExists = chats.some(c => c.id === data.message.chat_id)
-      if (!chatExists) {
-        await loadChats()
-      }
+      try {
+        // Check if chat exists in our list, if not reload chats
+        const { chats, loadChats } = get()
+        const chatExists = chats.some(c => c.id === data.message.chat_id)
+        if (!chatExists) {
+          console.log('[WS] Chat not in list, reloading chats')
+          await loadChats()
+        }
 
-      // Decrypt the message
-      const decryptedMessage = await decryptMessage(data.message)
+        // Decrypt the message
+        const decryptedMessage = await decryptMessage(data.message)
+        console.log('[WS] Decrypted message:', decryptedMessage.id, 'content:', decryptedMessage.content?.substring(0, 20))
 
-      if (decryptedMessage.chat_id === currentChatId) {
-        // Check if message already exists (avoid duplicates)
-        const existsById = messages.some(m => m.id === decryptedMessage.id)
-        // Also check for temp messages we added optimistically
-        const tempMessage = messages.find(m =>
-          m.id.startsWith('temp-') &&
-          m.sender_id === decryptedMessage.sender_id &&
-          m.content === decryptedMessage.content
-        )
+        // Get fresh state after async operations
+        const { currentChatId, messages } = get()
 
-        if (tempMessage) {
-          // Replace temp message with real one from server
+        if (decryptedMessage.chat_id === currentChatId) {
+          console.log('[WS] Message is for current chat')
+          // Check if message already exists (avoid duplicates) - use fresh state
+          const existsById = messages.some(m => m.id === decryptedMessage.id)
+          // Also check for temp messages we added optimistically
+          const tempMessage = messages.find(m =>
+            m.id.startsWith('temp-') &&
+            m.sender_id === decryptedMessage.sender_id &&
+            m.content === decryptedMessage.content
+          )
+
+          if (tempMessage) {
+            console.log('[WS] Replacing temp message:', tempMessage.id)
+            // Replace temp message with real one from server
+            set((state) => ({
+              messages: state.messages.map(m =>
+                m.id === tempMessage.id ? decryptedMessage : m
+              ),
+            }))
+          } else if (!existsById) {
+            console.log('[WS] Adding new message to state')
+            set((state) => {
+              console.log('[WS] Current messages count:', state.messages.length)
+              const newMessages = [...state.messages, decryptedMessage]
+              console.log('[WS] New messages count:', newMessages.length)
+              return { messages: newMessages }
+            })
+          } else {
+            console.log('[WS] Message already exists, skipping')
+          }
+          // Mark as read
+          messagesApi.markRead(decryptedMessage.id)
+        } else {
+          console.log('[WS] Message is for different chat:', decryptedMessage.chat_id)
+          // Update unread count and last_message for non-current chat
           set((state) => ({
-            messages: state.messages.map(m =>
-              m.id === tempMessage.id ? decryptedMessage : m
+            chats: state.chats.map((c) =>
+              c.id === decryptedMessage.chat_id
+                ? {
+                    ...c,
+                    unread_count: c.unread_count + 1,
+                    last_message_at: decryptedMessage.created_at,
+                    last_message: {
+                      id: decryptedMessage.id,
+                      content: decryptedMessage.content,
+                      sender_id: decryptedMessage.sender_id,
+                      created_at: decryptedMessage.created_at,
+                    }
+                  }
+                : c
             ),
           }))
-        } else if (!existsById) {
-          set((state) => ({
-            messages: [...state.messages, decryptedMessage],
-          }))
         }
-        // Mark as read
-        messagesApi.markRead(decryptedMessage.id)
-      } else {
-        // Update unread count and last_message for non-current chat
-        set({
-          chats: chats.map((c) =>
-            c.id === decryptedMessage.chat_id
-              ? {
-                  ...c,
-                  unread_count: c.unread_count + 1,
-                  last_message_at: decryptedMessage.created_at,
-                  last_message: {
-                    id: decryptedMessage.id,
-                    content: decryptedMessage.content,
-                    sender_id: decryptedMessage.sender_id,
-                    created_at: decryptedMessage.created_at,
-                  }
-                }
-              : c
-          ),
-        })
-      }
 
-      // Update last_message for current chat too and move to top
-      set((state) => ({
-        chats: [...state.chats]
-          .map((c) =>
-            c.id === decryptedMessage.chat_id
-              ? {
-                  ...c,
-                  last_message_at: decryptedMessage.created_at,
-                  last_message: {
-                    id: decryptedMessage.id,
-                    content: decryptedMessage.content,
-                    sender_id: decryptedMessage.sender_id,
-                    created_at: decryptedMessage.created_at,
+        // Update last_message for current chat too and move to top
+        set((state) => ({
+          chats: [...state.chats]
+            .map((c) =>
+              c.id === decryptedMessage.chat_id
+                ? {
+                    ...c,
+                    last_message_at: decryptedMessage.created_at,
+                    last_message: {
+                      id: decryptedMessage.id,
+                      content: decryptedMessage.content,
+                      sender_id: decryptedMessage.sender_id,
+                      created_at: decryptedMessage.created_at,
+                    }
                   }
-                }
-              : c
-          )
-          .sort((a, b) => {
-            const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0
-            const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0
-            return bTime - aTime
-          }),
-      }))
-    })
+                : c
+            )
+            .sort((a, b) => {
+              const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0
+              const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0
+              return bTime - aTime
+            }),
+        }))
+      } catch (error) {
+        console.error('[WS] Error handling new_message:', error)
+      }
+    }, true)
 
     // Handle message edits
     wsService.on('message_edited', async (data) => {
@@ -308,7 +328,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           m.id === decryptedMessage.id ? decryptedMessage : m
         ),
       }))
-    })
+    }, true)
 
     // Handle message deletes
     wsService.on('message_deleted', (data) => {
@@ -317,7 +337,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           m.id === data.message_id ? { ...m, is_deleted: true, content: '' } : m
         ),
       }))
-    })
+    }, true)
 
     // Handle typing
     wsService.on('typing_start', (data) => {
@@ -332,7 +352,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ],
         },
       }))
-    })
+    }, true)
 
     wsService.on('typing_stop', (data) => {
       set((state) => ({
@@ -343,7 +363,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ),
         },
       }))
-    })
+    }, true)
 
     // Handle online status
     wsService.on('user_online', (data) => {
@@ -357,7 +377,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ),
         })),
       }))
-    })
+    }, true)
 
     wsService.on('user_offline', (data) => {
       set((state) => ({
@@ -370,6 +390,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ),
         })),
       }))
-    })
+    }, true)
   },
 }))

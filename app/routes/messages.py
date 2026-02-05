@@ -186,11 +186,14 @@ async def send_message(
         select(ChatMember).where(ChatMember.chat_id == chat_id)
     ).all()
 
+    print(f"[WS] Broadcasting message {message.id} to {len(members)} members")
+
     # Send encrypted message to each member via WebSocket
     for chat_member in members:
         member_user_id = chat_member.user_id
         encrypted_response = build_message_response(message, session, encrypt_for_user_id=member_user_id)
 
+        print(f"[WS] Sending to user {member_user_id}, encrypted: {encrypted_response.get('encryption_version', 0) > 0}")
         await connection_manager.send_to_user(
             member_user_id,
             {
