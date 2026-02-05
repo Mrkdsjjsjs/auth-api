@@ -27,6 +27,13 @@ interface Message {
   encryption_version?: number
 }
 
+interface LastMessage {
+  id: string
+  content: string | null
+  sender_id: string
+  created_at: string
+}
+
 interface Chat {
   id: string
   type: string
@@ -35,6 +42,7 @@ interface Chat {
   members: { user_id: string; user?: User }[]
   unread_count: number
   last_message_at?: string
+  last_message?: LastMessage | null
 }
 
 interface ChatState {
@@ -165,10 +173,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
         messages: state.messages.map((m) =>
           m.id === tempId ? { ...optimisticMessage, id: data.id } : m
         ),
-        // Update last_message_at for current chat and move to top
+        // Update last_message and last_message_at for current chat and move to top
         chats: [...state.chats]
           .map((c) => c.id === currentChatId
-            ? { ...c, last_message_at: new Date().toISOString() }
+            ? {
+                ...c,
+                last_message_at: new Date().toISOString(),
+                last_message: {
+                  id: data.id,
+                  content: content,
+                  sender_id: currentUser?.id || '',
+                  created_at: new Date().toISOString(),
+                }
+              }
             : c
           )
           .sort((a, b) => {
@@ -238,23 +255,48 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Mark as read
         messagesApi.markRead(decryptedMessage.id)
       } else {
-        // Update unread count
+        // Update unread count and last_message for non-current chat
         set({
           chats: chats.map((c) =>
             c.id === decryptedMessage.chat_id
-              ? { ...c, unread_count: c.unread_count + 1, last_message_at: decryptedMessage.created_at }
+              ? {
+                  ...c,
+                  unread_count: c.unread_count + 1,
+                  last_message_at: decryptedMessage.created_at,
+                  last_message: {
+                    id: decryptedMessage.id,
+                    content: decryptedMessage.content,
+                    sender_id: decryptedMessage.sender_id,
+                    created_at: decryptedMessage.created_at,
+                  }
+                }
               : c
           ),
         })
       }
 
-      // Move chat to top of list (sort by last_message_at)
+      // Update last_message for current chat too and move to top
       set((state) => ({
-        chats: [...state.chats].sort((a, b) => {
-          const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0
-          const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0
-          return bTime - aTime
-        }),
+        chats: [...state.chats]
+          .map((c) =>
+            c.id === decryptedMessage.chat_id
+              ? {
+                  ...c,
+                  last_message_at: decryptedMessage.created_at,
+                  last_message: {
+                    id: decryptedMessage.id,
+                    content: decryptedMessage.content,
+                    sender_id: decryptedMessage.sender_id,
+                    created_at: decryptedMessage.created_at,
+                  }
+                }
+              : c
+          )
+          .sort((a, b) => {
+            const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0
+            const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0
+            return bTime - aTime
+          }),
       }))
     })
 

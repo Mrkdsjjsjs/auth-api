@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from pydantic import BaseModel
 from sqlmodel import Session, select, or_
 from datetime import datetime
 from app.database import get_session
@@ -160,6 +161,28 @@ async def update_avatar(
     file_record = await file_service.upload_file(file, current_user.id, session)
 
     current_user.avatar_url = file_record.url
+    session.add(current_user)
+    session.commit()
+    session.refresh(current_user)
+    return current_user
+
+
+class EmojiAvatarRequest(BaseModel):
+    emoji: str
+
+
+@router.put("/me/avatar/emoji", response_model=UserResponse,
+    summary="😀 Set emoji avatar",
+    responses={
+        200: {"description": "Emoji avatar set"},
+    })
+def set_emoji_avatar(
+    data: EmojiAvatarRequest,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    """Set emoji as avatar"""
+    current_user.avatar_url = f"emoji:{data.emoji}"
     session.add(current_user)
     session.commit()
     session.refresh(current_user)

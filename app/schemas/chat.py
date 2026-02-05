@@ -24,6 +24,13 @@ class ChatMemberResponse(BaseModel):
     user: Optional[UserPublicResponse] = None
 
 
+class LastMessageResponse(BaseModel):
+    id: str
+    content: Optional[str]
+    sender_id: str
+    created_at: datetime
+
+
 class ChatResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -36,6 +43,7 @@ class ChatResponse(BaseModel):
     last_message_at: Optional[datetime]
     members: list[ChatMemberResponse] = []
     unread_count: int = 0
+    last_message: Optional[LastMessageResponse] = None
 
 
 class ChatListResponse(BaseModel):

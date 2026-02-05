@@ -8,6 +8,19 @@ import wsService from '../services/websocket'
 import { format } from 'date-fns'
 import { Send, Plus, LogOut, Search, MessageCircle, X, User, Lock, Unlock, ArrowLeft } from 'lucide-react'
 
+// Emoji avatars based on user id hash
+const AVATAR_EMOJIS = ['🦊', '🐼', '🦁', '🐯', '🐻', '🐨', '🐸', '🐵', '🦄', '🐲', '🦋', '🌸', '🌺', '🌻', '🍀', '⭐', '🌙', '🔥', '💎', '🎯', '🎨', '🎭', '🎪', '🎬', '🎤', '🎸', '🎹', '🎺', '🥁', '🎮']
+
+function getEmojiAvatar(id: string): string {
+  // Simple hash based on id
+  let hash = 0
+  for (let i = 0; i < id.length; i++) {
+    hash = ((hash << 5) - hash) + id.charCodeAt(i)
+    hash = hash & hash
+  }
+  return AVATAR_EMOJIS[Math.abs(hash) % AVATAR_EMOJIS.length]
+}
+
 export default function ChatPage() {
   const navigate = useNavigate()
   const { user, logout, loadUser } = useAuthStore()
@@ -63,6 +76,16 @@ export default function ChatPage() {
     if (chat.avatar_url) return chat.avatar_url
     const otherUser = getOtherUser(chat)
     return otherUser?.avatar_url || null
+  }
+
+  const renderAvatar = (avatarUrl: string | null | undefined, id: string, size: 'small' | 'large' = 'small') => {
+    if (avatarUrl?.startsWith('emoji:')) {
+      return <span className={size === 'large' ? 'emoji-lg' : ''}>{avatarUrl.slice(6)}</span>
+    }
+    if (avatarUrl) {
+      return <img src={avatarUrl} alt="" className="avatar-img" />
+    }
+    return getEmojiAvatar(id)
   }
 
   const handleSelectChat = (chatId: string) => {
@@ -168,24 +191,24 @@ export default function ChatPage() {
           ) : (
             chats.map((chat) => {
               const avatarUrl = getChatAvatar(chat)
+              const otherUser = getOtherUser(chat)
+              const lastMsg = chat.last_message
               return (
                 <div
                   key={chat.id}
                   className={`chat-item ${chat.id === currentChatId ? 'active' : ''}`}
                   onClick={() => handleSelectChat(chat.id)}
                 >
-                  <div className="chat-avatar">
-                    {avatarUrl ? (
-                      <img src={avatarUrl} alt="" className="avatar-img" />
-                    ) : (
-                      getChatName(chat)?.[0]?.toUpperCase() || '?'
-                    )}
+                  <div className="chat-avatar emoji-avatar">
+                    {renderAvatar(avatarUrl, otherUser?.id || chat.id)}
                   </div>
                   <div className="chat-info">
                     <div className="chat-name">{getChatName(chat)}</div>
                     <div className="chat-last-message">
                       {typingUsers[chat.id]?.length ? (
                         <span style={{ color: 'var(--accent)' }}>typing...</span>
+                      ) : lastMsg?.content ? (
+                        lastMsg.sender_id === user?.id ? `You: ${lastMsg.content}` : lastMsg.content
                       ) : (
                         'Start chatting'
                       )}
@@ -220,12 +243,8 @@ export default function ChatPage() {
               >
                 <ArrowLeft size={20} />
               </button>
-              <div className="chat-avatar" style={{ width: 40, height: 40 }}>
-                {getChatAvatar(currentChat) ? (
-                  <img src={getChatAvatar(currentChat)!} alt="" className="avatar-img" />
-                ) : (
-                  getChatName(currentChat)?.[0]?.toUpperCase()
-                )}
+              <div className="chat-avatar emoji-avatar" style={{ width: 40, height: 40 }}>
+                {renderAvatar(getChatAvatar(currentChat), getOtherUser(currentChat)?.id || currentChat.id)}
               </div>
               <div className="chat-header-info">
                 <div className="chat-header-name">{getChatName(currentChat)}</div>
@@ -345,12 +364,8 @@ export default function ChatPage() {
                   className="user-item"
                   onClick={() => handleStartChat(u.id)}
                 >
-                  <div className="user-avatar">
-                    {u.avatar_url ? (
-                      <img src={u.avatar_url} alt="" className="avatar-img" />
-                    ) : (
-                      (u.display_name || u.username || u.id)?.[0]?.toUpperCase()
-                    )}
+                  <div className="user-avatar emoji-avatar">
+                    {renderAvatar(u.avatar_url, u.id)}
                   </div>
                   <div>
                     <div className="user-name">

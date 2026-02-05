@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
 from fastapi.responses import JSONResponse
 from sqlmodel import Session, select
 from datetime import datetime, timedelta
+import random
+import string
 from app.database import get_session
 from app.models.user import User
 from app.schemas.auth import (
@@ -13,6 +15,23 @@ from app.auth import (
     hash_password, verify_password, create_access_token,
     create_refresh_token, decode_token, get_current_user, generate_reset_token
 )
+
+# Random name generation
+ADJECTIVES = ['Happy', 'Lucky', 'Sunny', 'Cool', 'Swift', 'Bright', 'Wild', 'Calm', 'Bold', 'Smart', 'Clever', 'Brave', 'Kind', 'Gentle', 'Fierce', 'Quick', 'Mighty', 'Noble', 'Proud', 'Silent']
+NOUNS = ['Panda', 'Tiger', 'Eagle', 'Wolf', 'Bear', 'Fox', 'Hawk', 'Lion', 'Shark', 'Falcon', 'Dragon', 'Phoenix', 'Raven', 'Panther', 'Cobra', 'Viper', 'Owl', 'Lynx', 'Jaguar', 'Orca']
+
+def generate_random_username() -> str:
+    """Generate a random username like 'HappyPanda1234'"""
+    adj = random.choice(ADJECTIVES)
+    noun = random.choice(NOUNS)
+    num = ''.join(random.choices(string.digits, k=4))
+    return f"{adj}{noun}{num}"
+
+def generate_random_display_name() -> str:
+    """Generate a random display name like 'Happy Panda'"""
+    adj = random.choice(ADJECTIVES)
+    noun = random.choice(NOUNS)
+    return f"{adj} {noun}"
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -73,7 +92,18 @@ def register(data: UserCreate, session: Session = Depends(get_session)):
     existing = session.exec(select(User).where(User.email == data.email)).first()
     if existing:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
-    user = User(email=data.email, hashed_password=hash_password(data.password))
+
+    # Generate unique username
+    username = generate_random_username()
+    while session.exec(select(User).where(User.username == username)).first():
+        username = generate_random_username()
+
+    user = User(
+        email=data.email,
+        hashed_password=hash_password(data.password),
+        username=username.lower(),
+        display_name=generate_random_display_name()
+    )
     session.add(user)
     session.commit()
     session.refresh(user)

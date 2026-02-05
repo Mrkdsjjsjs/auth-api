@@ -7,7 +7,7 @@ from app.models.chat import Chat, ChatMember, ChatType, MemberRole
 from app.models.message import Message
 from app.schemas.chat import (
     ChatCreate, ChatUpdate, ChatResponse, ChatListResponse,
-    ChatMemberAdd, ChatMemberResponse
+    ChatMemberAdd, ChatMemberResponse, LastMessageResponse
 )
 from app.schemas.user import UserPublicResponse
 from app.auth import get_current_user
@@ -30,22 +30,44 @@ def get_chat_response(chat: Chat, session: Session, current_user_id: str) -> Cha
             user=UserPublicResponse.model_validate(user) if user else None
         ))
 
-    # Calculate unread count
+    # Calculate unread count based on last read message timestamp
     current_member = next((m for m in members if m.user_id == current_user_id), None)
     unread_count = 0
     if current_member and current_member.last_read_message_id:
-        unread_query = select(Message).where(
-            Message.chat_id == chat.id,
-            Message.id > current_member.last_read_message_id,
-            Message.is_deleted == False
-        )
-        unread_count = len(session.exec(unread_query).all())
+        # Get the timestamp of last read message
+        last_read_msg = session.get(Message, current_member.last_read_message_id)
+        if last_read_msg:
+            # Count messages after last read
+            unread_query = select(Message).where(
+                Message.chat_id == chat.id,
+                Message.created_at > last_read_msg.created_at,
+                Message.is_deleted == False
+            )
+            unread_count = len(session.exec(unread_query).all())
     elif current_member:
+        # No messages read yet - count all messages not from current user
         unread_query = select(Message).where(
             Message.chat_id == chat.id,
-            Message.is_deleted == False
+            Message.is_deleted == False,
+            Message.sender_id != current_user_id
         )
         unread_count = len(session.exec(unread_query).all())
+
+    # Get last message
+    last_message = None
+    last_msg = session.exec(
+        select(Message)
+        .where(Message.chat_id == chat.id, Message.is_deleted == False)
+        .order_by(Message.created_at.desc())
+        .limit(1)
+    ).first()
+    if last_msg:
+        last_message = LastMessageResponse(
+            id=last_msg.id,
+            content=last_msg.content,
+            sender_id=last_msg.sender_id,
+            created_at=last_msg.created_at
+        )
 
     return ChatResponse(
         id=chat.id,
@@ -56,7 +78,8 @@ def get_chat_response(chat: Chat, session: Session, current_user_id: str) -> Cha
         created_at=chat.created_at,
         last_message_at=chat.last_message_at,
         members=member_responses,
-        unread_count=unread_count
+        unread_count=unread_count,
+        last_message=last_message
     )
 
 

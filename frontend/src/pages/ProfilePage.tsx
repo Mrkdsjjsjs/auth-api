@@ -3,7 +3,19 @@ import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import { useEncryptionStore } from '../store/encryptionStore'
 import { usersApi } from '../services/api'
-import { ArrowLeft, Camera, Check, X, Shield, Key, Lock } from 'lucide-react'
+import { ArrowLeft, Camera, Check, X, Shield, Key, Lock, Smile } from 'lucide-react'
+
+// Emoji avatars for picker
+const AVATAR_EMOJIS = ['🦊', '🐼', '🦁', '🐯', '🐻', '🐨', '🐸', '🐵', '🦄', '🐲', '🦋', '🌸', '🌺', '🌻', '🍀', '⭐', '🌙', '🔥', '💎', '🎯', '🎨', '🎭', '🎪', '🎬', '🎤', '🎸', '🎹', '🎺', '🥁', '🎮', '🚀', '🌈', '💜', '💙', '💚', '💛', '🧡', '❤️', '🖤', '🤍']
+
+function getEmojiAvatar(id: string): string {
+  let hash = 0
+  for (let i = 0; i < id.length; i++) {
+    hash = ((hash << 5) - hash) + id.charCodeAt(i)
+    hash = hash & hash
+  }
+  return AVATAR_EMOJIS[Math.abs(hash) % AVATAR_EMOJIS.length]
+}
 
 export default function ProfilePage() {
   const navigate = useNavigate()
@@ -17,6 +29,7 @@ export default function ProfilePage() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -87,6 +100,36 @@ export default function ProfilePage() {
     }
   }
 
+  const handleEmojiAvatar = async (emoji: string) => {
+    setIsLoading(true)
+    setShowEmojiPicker(false)
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || ''}/api/users/me/avatar/emoji`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${localStorage.getItem('access_token')}`,
+          },
+          body: JSON.stringify({ emoji }),
+        }
+      )
+
+      if (!response.ok) {
+        throw new Error('Failed to set emoji avatar')
+      }
+
+      await loadUser()
+      setSuccess('Avatar updated!')
+      setTimeout(() => setSuccess(null), 3000)
+    } catch (err: any) {
+      setError(err.message || 'Failed to set avatar')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const handleCancel = () => {
     if (user) {
       setUsername(user.username || '')
@@ -121,26 +164,58 @@ export default function ProfilePage() {
 
         <div className="profile-avatar-section">
           <div
-            className="profile-avatar"
+            className="profile-avatar emoji-avatar-large"
             onClick={() => fileInputRef.current?.click()}
           >
-            {user.avatar_url ? (
+            {user.avatar_url?.startsWith('emoji:') ? (
+              <span className="emoji-display">{user.avatar_url.slice(6)}</span>
+            ) : user.avatar_url ? (
               <img src={user.avatar_url} alt="Avatar" />
             ) : (
-              <span>{(user.display_name || user.username || user.email)?.[0]?.toUpperCase()}</span>
+              <span className="emoji-display">{getEmojiAvatar(user.id)}</span>
             )}
             <div className="profile-avatar-overlay">
               <Camera size={24} />
             </div>
           </div>
+          <div className="avatar-buttons">
+            <button
+              className="avatar-btn"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isLoading}
+            >
+              <Camera size={16} />
+              Upload
+            </button>
+            <button
+              className="avatar-btn"
+              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+              disabled={isLoading}
+            >
+              <Smile size={16} />
+              Emoji
+            </button>
+          </div>
+          {showEmojiPicker && (
+            <div className="emoji-picker">
+              {AVATAR_EMOJIS.map((emoji) => (
+                <button
+                  key={emoji}
+                  className="emoji-option"
+                  onClick={() => handleEmojiAvatar(emoji)}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          )}
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,image/gif"
             onChange={handleAvatarChange}
             style={{ display: 'none' }}
           />
-          <p className="profile-avatar-hint">Click to change avatar</p>
         </div>
 
         <div className="profile-form">
@@ -348,9 +423,74 @@ export default function ProfilePage() {
           opacity: 1;
         }
 
-        .profile-avatar-hint {
-          color: var(--text-secondary);
-          font-size: 12px;
+        .emoji-avatar-large {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .emoji-display {
+          font-size: 56px;
+        }
+
+        .avatar-buttons {
+          display: flex;
+          gap: 12px;
+          justify-content: center;
+          margin-top: 12px;
+        }
+
+        .avatar-btn {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 16px;
+          background: var(--bg-tertiary);
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          color: var(--text-primary);
+          font-size: 14px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .avatar-btn:hover {
+          background: var(--bg-hover);
+        }
+
+        .avatar-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .emoji-picker {
+          display: grid;
+          grid-template-columns: repeat(8, 1fr);
+          gap: 4px;
+          padding: 12px;
+          background: var(--bg-tertiary);
+          border-radius: 12px;
+          margin-top: 12px;
+          max-width: 320px;
+          margin-left: auto;
+          margin-right: auto;
+        }
+
+        .emoji-option {
+          width: 36px;
+          height: 36px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 20px;
+          background: transparent;
+          border: none;
+          border-radius: 8px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .emoji-option:hover {
+          background: var(--bg-hover);
+          transform: scale(1.2);
         }
 
         .profile-form {
