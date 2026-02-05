@@ -49,6 +49,7 @@ services:
       - CORS_ORIGINS=http://localhost:3000,http://localhost:5173,https://gayauth228gay.duckdns.org
     volumes:
       - ./app/static/uploads:/app/app/static/uploads
+      - ./app/encrypted_storage:/app/app/encrypted_storage
     ports:
       - "8000:8000"
     depends_on:
