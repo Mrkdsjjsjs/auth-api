@@ -14,6 +14,7 @@ interface EncryptionState {
   currentKeyId: string | null
   identityKeyPair: IdentityKeyPair | null
   serverPublicKey: string | null  // Server's public key for E2E transport
+  recipientKeysCache: Map<string, string>  // Cache for recipient public keys (for files)
 
   initialize: () => Promise<void>
   generateKeys: () => Promise<void>
@@ -25,6 +26,7 @@ interface EncryptionState {
     encrypted_content: string
     ephemeral_public_key: string
   } | null>
+  getRecipientPublicKey: (userId: string) => Promise<string | null>
   clearKeys: () => void
 }
 
@@ -34,6 +36,7 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
   currentKeyId: null,
   identityKeyPair: null,
   serverPublicKey: null,
+  recipientKeysCache: new Map(),
 
   initialize: async () => {
     console.log('[Encryption] Starting initialization...')
@@ -178,6 +181,26 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
     }
   },
 
+  getRecipientPublicKey: async (userId: string) => {
+    const { recipientKeysCache } = get()
+
+    // Check cache first
+    if (recipientKeysCache.has(userId)) {
+      return recipientKeysCache.get(userId)!
+    }
+
+    try {
+      const { data } = await keysApi.getUserKey(userId)
+      if (data.public_key) {
+        recipientKeysCache.set(userId, data.public_key)
+        return data.public_key
+      }
+    } catch (error) {
+      console.warn('[Encryption] Failed to get recipient public key:', error)
+    }
+    return null
+  },
+
   clearKeys: () => {
     keyStorageService.clearKeys()
     set({
@@ -186,6 +209,7 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
       currentKeyId: null,
       identityKeyPair: null,
       serverPublicKey: null,
+      recipientKeysCache: new Map(),
     })
   },
 }))
