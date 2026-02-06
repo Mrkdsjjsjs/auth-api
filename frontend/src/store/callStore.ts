@@ -352,17 +352,31 @@ export const useCallStore = create<CallState>((set, get) => ({
     })
 
     // WebRTC connection state handler
+    let wasConnected = false
     webrtcService.on('connectionstatechange', (state) => {
       console.log('[Call] Connection state:', state)
       if (state === 'connected') {
+        wasConnected = true
         set({ status: 'active' })
 
-        // Start call duration timer
-        durationInterval = setInterval(() => {
-          set((s) => ({ callDuration: s.callDuration + 1 }))
-        }, 1000)
-      } else if (state === 'disconnected' || state === 'failed') {
-        get().endCall()
+        // Start call duration timer (only once)
+        if (!durationInterval) {
+          durationInterval = setInterval(() => {
+            set((s) => ({ callDuration: s.callDuration + 1 }))
+          }, 1000)
+        }
+      } else if (state === 'disconnected') {
+        // Give it a chance to reconnect
+        console.log('[Call] Disconnected, waiting for reconnect...')
+      } else if (state === 'failed') {
+        // Only end call if we never connected (initial connection failed)
+        // During renegotiation, failed can happen temporarily
+        if (!wasConnected) {
+          console.log('[Call] Connection failed on initial connect')
+          get().endCall()
+        } else {
+          console.log('[Call] Connection failed during call, may recover')
+        }
       }
     })
 
