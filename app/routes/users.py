@@ -7,12 +7,8 @@ from app.models.user import User
 from app.schemas.user import UserResponse, UserUpdate, UserPublicResponse, UserSearchResponse
 from app.auth import get_current_user
 from app.services.file_service import FileService
-from app.services.redis_service import redis_service
 
 router = APIRouter(prefix="/api/users", tags=["users"])
-
-USER_PROFILE_CACHE_TTL = 300  # 5 minutes
-SEARCH_CACHE_TTL = 30  # 30 seconds
 
 
 @router.get("/search", response_model=UserSearchResponse,
@@ -20,7 +16,7 @@ SEARCH_CACHE_TTL = 30  # 30 seconds
     responses={
         200: {"description": "Search results returned"},
     })
-async def search_users(
+def search_users(
     q: str,
     limit: int = 20,
     offset: int = 0,
@@ -37,12 +33,6 @@ async def search_users(
     - **limit**: Max results (default 20)
     - **offset**: Pagination offset
     """
-    # Try cache first
-    cache_key = f"cache:search:{q.lower()}:{limit}:{offset}"
-    cached = await redis_service.get_json(cache_key)
-    if cached:
-        return UserSearchResponse(users=cached["users"], total=cached["total"])
-
     # Check if searching by @username tag
     if q.startswith("@"):
         username_query = q[1:]  # Remove @ prefix
@@ -88,16 +78,10 @@ async def search_users(
         )
         total = len(session.exec(count_query).all())
 
-    user_responses = [UserPublicResponse.model_validate(u) for u in users]
-
-    # Cache result
-    cache_data = {
-        "users": [u.model_dump(mode='json') for u in user_responses],
-        "total": total
-    }
-    await redis_service.set(cache_key, cache_data, SEARCH_CACHE_TTL)
-
-    return UserSearchResponse(users=user_responses, total=total)
+    return UserSearchResponse(
+        users=[UserPublicResponse.model_validate(u) for u in users],
+        total=total
+    )
 
 
 @router.get("/me", response_model=UserResponse,
@@ -120,7 +104,7 @@ def get_me(current_user: User = Depends(get_current_user)):
         200: {"description": "Profile updated"},
         400: {"description": "Username already taken"},
     })
-async def update_me(
+def update_me(
     data: UserUpdate,
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
@@ -151,10 +135,6 @@ async def update_me(
     session.add(current_user)
     session.commit()
     session.refresh(current_user)
-
-    # Invalidate profile cache
-    await redis_service.delete(redis_service.user_profile_key(current_user.id))
-
     return current_user
 
 
@@ -216,10 +196,6 @@ async def update_avatar(
     session.add(current_user)
     session.commit()
     session.refresh(current_user)
-
-    # Invalidate profile cache
-    await redis_service.delete(redis_service.user_profile_key(current_user.id))
-
     return current_user
 
 
@@ -232,7 +208,7 @@ class EmojiAvatarRequest(BaseModel):
     responses={
         200: {"description": "Emoji avatar set"},
     })
-async def set_emoji_avatar(
+def set_emoji_avatar(
     data: EmojiAvatarRequest,
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
@@ -242,10 +218,6 @@ async def set_emoji_avatar(
     session.add(current_user)
     session.commit()
     session.refresh(current_user)
-
-    # Invalidate profile cache
-    await redis_service.delete(redis_service.user_profile_key(current_user.id))
-
     return current_user
 
 
@@ -255,7 +227,7 @@ async def set_emoji_avatar(
         200: {"description": "User found"},
         404: {"description": "User not found"},
     })
-async def get_user(
+def get_user(
     user_id: str,
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
@@ -265,18 +237,7 @@ async def get_user(
 
     Returns public profile information for a specific user.
     """
-    # Try cache first
-    cache_key = redis_service.user_profile_key(user_id)
-    cached = await redis_service.get_json(cache_key)
-    if cached:
-        return UserPublicResponse(**cached)
-
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-    # Cache profile
-    user_response = UserPublicResponse.model_validate(user)
-    await redis_service.set(cache_key, user_response.model_dump(mode='json'), USER_PROFILE_CACHE_TTL)
-
-    return user_response
+    return user
