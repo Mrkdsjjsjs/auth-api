@@ -1,4 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
-  <rect width="192" height="192" rx="40" fill="#3b82f6"/>
-  <path d="M96 40c-30.9 0-56 25.1-56 56 0 9.9 2.6 19.2 7.1 27.3L40 152l29.7-7.8c7.8 4.2 16.7 6.6 26.3 6.6 30.9 0 56-25.1 56-56s-25.1-56-56-56zm0 100c-8.3 0-16.1-2.3-22.8-6.2l-1.6-1-16.7 4.4 4.5-16.3-.9-1.5c-4.3-6.8-6.5-14.7-6.5-22.9 0-24.3 19.7-44 44-44s44 19.7 44 44-19.7 44-44 44z" fill="white"/>
+<svg width="192" height="192" viewBox="0 0 192 192" xmlns="http://www.w3.org/2000/svg">
+  <!-- background -->
+  <rect width="192" height="192" rx="36" fill="#0B0D10"/>
+
+  <!-- glow -->
+  <rect x="84" y="36" width="24" height="120" rx="12" fill="#7AA2FF" opacity="0.15"/>
+
+  <!-- main line -->
+  <rect x="90" y="42" width="12" height="108" rx="6" fill="#7AA2FF"/>
+
+  <!-- top accent -->
+  <circle cx="96" cy="42" r="12" fill="#7AA2FF"/>
+
+  <!-- bottom accent -->
+  <circle cx="96" cy="150" r="12" fill="#7AA2FF"/>
 </svg>
