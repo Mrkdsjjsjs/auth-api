@@ -777,34 +777,43 @@ body {
 
   .chat-header {
     padding: 8px 16px;
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
   }
 
   .messages-container {
     padding: 8px 16px;
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
   }
 
   .message-input-container {
     padding: 8px 16px;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
     padding-left: max(16px, env(safe-area-inset-left));
     padding-right: max(16px, env(safe-area-inset-right));
-    padding-bottom: max(8px, env(safe-area-inset-bottom));
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
   }
 
-  .message-input {
-    flex: 1;
-    max-width: 600px;
+  .message-input-container .attach-btn {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+  }
+
+  .message-input-container .message-input {
+    flex: 0 1 500px;
     min-height: 36px;
     padding: 8px 14px;
   }
 
-  .send-btn, .attach-btn {
+  .message-input-container .send-btn {
+    flex-shrink: 0;
     width: 36px;
     height: 36px;
-    flex-shrink: 0;
   }
 
   .message {
