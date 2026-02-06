@@ -244,7 +244,23 @@ export const useCallStore = create<CallState>((set, get) => ({
 
     // WebRTC offer
     wsService.on('call_offer', async (data) => {
-      console.log('[Call] Received offer')
+      console.log('[Call] Received offer, checking if ready...')
+
+      // Wait for peer connection to be ready (max 5 seconds)
+      let attempts = 0
+      while (!webrtcService.isReady() && attempts < 50) {
+        console.log('[Call] Waiting for peer connection...', attempts)
+        await new Promise(resolve => setTimeout(resolve, 100))
+        attempts++
+      }
+
+      if (!webrtcService.isReady()) {
+        console.error('[Call] Peer connection not ready after waiting')
+        get().endCall()
+        return
+      }
+
+      console.log('[Call] Peer connection ready, processing offer')
       try {
         await webrtcService.setRemoteDescription(data.sdp)
         const answer = await webrtcService.createAnswer()
@@ -252,6 +268,7 @@ export const useCallStore = create<CallState>((set, get) => ({
           call_id: data.call_id,
           sdp: answer,
         })
+        console.log('[Call] Answer sent')
       } catch (error) {
         console.error('[Call] Failed to handle offer:', error)
         get().endCall()

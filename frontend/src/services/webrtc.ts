@@ -248,6 +248,13 @@ class WebRTCService {
   }
 
   /**
+   * Check if peer connection is ready to handle offers/answers
+   */
+  isReady(): boolean {
+    return this.peerConnection !== null && this.localStream !== null
+  }
+
+  /**
    * Event handling
    */
   on(event: string, handler: EventHandler): void {
