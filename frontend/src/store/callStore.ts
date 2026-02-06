@@ -255,9 +255,9 @@ export const useCallStore = create<CallState>((set, get) => ({
     wsService.on('call_offer', async (data) => {
       console.log('[Call] Received offer')
 
-      // Prevent concurrent processing
+      // Prevent concurrent processing (but allow sequential for renegotiation)
       if (processingOffer) {
-        console.log('[Call] Already processing offer, ignoring')
+        console.log('[Call] Already processing offer, queuing')
         return
       }
       processingOffer = true
@@ -284,6 +284,7 @@ export const useCallStore = create<CallState>((set, get) => ({
           sdp: answer,
         })
         console.log('[Call] Answer sent')
+        processingOffer = false  // Allow next offer (renegotiation)
       } catch (error) {
         console.error('[Call] Failed to handle offer:', error)
         processingOffer = false
@@ -292,23 +293,24 @@ export const useCallStore = create<CallState>((set, get) => ({
     }, true)
 
     // WebRTC answer
-    let answerProcessed = false
+    let processingAnswer = false
     wsService.on('call_answer', async (data) => {
       console.log('[Call] Received answer')
 
-      // Prevent duplicate processing
-      if (answerProcessed) {
-        console.log('[Call] Answer already processed, ignoring')
+      // Prevent concurrent processing
+      if (processingAnswer) {
+        console.log('[Call] Already processing answer, ignoring')
         return
       }
-      answerProcessed = true
+      processingAnswer = true
 
       try {
         await webrtcService.setRemoteDescription(data.sdp)
         console.log('[Call] Remote description set')
+        processingAnswer = false  // Allow next answer (renegotiation)
       } catch (error) {
         console.error('[Call] Failed to handle answer:', error)
-        answerProcessed = false
+        processingAnswer = false
         get().endCall()
       }
     }, true)
@@ -361,6 +363,23 @@ export const useCallStore = create<CallState>((set, get) => ({
         }, 1000)
       } else if (state === 'disconnected' || state === 'failed') {
         get().endCall()
+      }
+    })
+
+    // Handle renegotiation (for screen share)
+    webrtcService.on('needsrenegotiation', async () => {
+      const { callId } = get()
+      if (!callId) return
+
+      console.log('[Call] Renegotiation needed, creating new offer')
+      try {
+        const offer = await webrtcService.createOffer()
+        wsService.send('call_offer', {
+          call_id: callId,
+          sdp: offer,
+        })
+      } catch (error) {
+        console.error('[Call] Renegotiation failed:', error)
       }
     })
 

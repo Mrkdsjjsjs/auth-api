@@ -168,35 +168,40 @@ class WebRTCService {
     try {
       this.screenStream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
-        audio: true,
+        audio: false,
       })
 
-      // Replace video track if exists, or add screen track
-      if (this.peerConnection) {
-        const videoSender = this.peerConnection
-          .getSenders()
-          .find((s) => s.track?.kind === 'video')
+      if (!this.peerConnection) {
+        throw new Error('No peer connection')
+      }
 
-        if (videoSender && this.screenStream.getVideoTracks()[0]) {
-          await videoSender.replaceTrack(this.screenStream.getVideoTracks()[0])
-        } else {
-          // Add screen track
-          this.screenStream.getTracks().forEach((track) => {
-            if (this.peerConnection && this.screenStream) {
-              this.peerConnection.addTrack(track, this.screenStream)
-            }
-          })
-        }
+      const videoTrack = this.screenStream.getVideoTracks()[0]
+
+      // Check if we already have a video sender
+      const videoSender = this.peerConnection
+        .getSenders()
+        .find((s) => s.track?.kind === 'video')
+
+      if (videoSender) {
+        // Replace existing video track
+        await videoSender.replaceTrack(videoTrack)
+      } else {
+        // Add new video track
+        this.peerConnection.addTrack(videoTrack, this.screenStream)
       }
 
       // Handle when user stops screen share via browser UI
-      this.screenStream.getVideoTracks()[0].onended = () => {
+      videoTrack.onended = () => {
         this.stopScreenShare()
         this.emit('screenshareended', null)
       }
 
       console.log('[WebRTC] Screen sharing started')
       this.emit('screenshare', this.screenStream)
+
+      // Trigger renegotiation
+      this.emit('needsrenegotiation', null)
+
       return this.screenStream
     } catch (error) {
       console.error('[WebRTC] Failed to start screen share:', error)
