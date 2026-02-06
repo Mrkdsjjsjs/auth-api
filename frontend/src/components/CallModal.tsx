@@ -3,6 +3,18 @@ import { useCallStore } from '../store/callStore'
 import { PhoneOff, Mic, MicOff, Monitor } from 'lucide-react'
 import webrtcService from '../services/webrtc'
 
+// Emoji avatars based on user id hash
+const AVATAR_EMOJIS = ['🦊', '🐼', '🦁', '🐯', '🐻', '🐨', '🐸', '🐵', '🦄', '🐲', '🦋', '🌸', '🌺', '🌻', '🍀', '⭐', '🌙', '🔥', '💎', '🎯', '🎨', '🎭', '🎪', '🎬', '🎤', '🎸', '🎹', '🎺', '🥁', '🎮']
+
+function getEmojiAvatar(id: string): string {
+  let hash = 0
+  for (let i = 0; i < id.length; i++) {
+    hash = ((hash << 5) - hash) + id.charCodeAt(i)
+    hash = hash & hash
+  }
+  return AVATAR_EMOJIS[Math.abs(hash) % AVATAR_EMOJIS.length]
+}
+
 // Format seconds to MM:SS
 function formatDuration(seconds: number): string {
   const mins = Math.floor(seconds / 60)
@@ -12,12 +24,16 @@ function formatDuration(seconds: number): string {
 
 interface CallModalProps {
   remoteUserName?: string
+  remoteUserAvatar?: string
+  remoteUserId?: string
 }
 
-export default function CallModal({ remoteUserName }: CallModalProps) {
+export default function CallModal({ remoteUserName, remoteUserAvatar, remoteUserId }: CallModalProps) {
   const {
     status,
     remoteUserName: storeRemoteUserName,
+    remoteUserAvatar: storeRemoteUserAvatar,
+    remoteUserId: storeRemoteUserId,
     isMuted,
     isRemoteMuted,
     isScreenSharing,
@@ -31,6 +47,8 @@ export default function CallModal({ remoteUserName }: CallModalProps) {
 
   const audioRef = useRef<HTMLAudioElement>(null)
   const displayName = remoteUserName || storeRemoteUserName || 'Unknown'
+  const avatarUrl = remoteUserAvatar || storeRemoteUserAvatar
+  const oderId = remoteUserId || storeRemoteUserId || 'unknown'
 
   // Handle remote stream
   useEffect(() => {
@@ -48,8 +66,8 @@ export default function CallModal({ remoteUserName }: CallModalProps) {
     }
   }, [])
 
-  // Don't render if no active call
-  if (status === 'idle') {
+  // Don't render for idle or incoming (incoming has its own notification)
+  if (status === 'idle' || status === 'incoming') {
     return null
   }
 
@@ -58,7 +76,7 @@ export default function CallModal({ remoteUserName }: CallModalProps) {
       case 'initiating':
         return 'Starting call...'
       case 'ringing':
-        return 'Ringing...'
+        return 'Calling...'
       case 'connecting':
         return 'Connecting...'
       case 'active':
@@ -70,15 +88,26 @@ export default function CallModal({ remoteUserName }: CallModalProps) {
     }
   }
 
+  const renderAvatar = () => {
+    if (avatarUrl?.startsWith('emoji:')) {
+      return <span className="call-avatar-emoji">{avatarUrl.slice(6)}</span>
+    }
+    if (avatarUrl?.match(/\.(mp4|webm|mov)$/i)) {
+      return <video src={avatarUrl} autoPlay loop muted playsInline className="call-avatar-img" />
+    }
+    if (avatarUrl) {
+      return <img src={avatarUrl} alt="" className="call-avatar-img" />
+    }
+    return <span className="call-avatar-emoji">{getEmojiAvatar(oderId)}</span>
+  }
+
   return (
     <div className="call-modal-overlay">
       <div className="call-modal">
         <div className="call-modal-content">
           {/* User Avatar */}
           <div className="call-avatar">
-            <span className="call-avatar-emoji">
-              {displayName.charAt(0).toUpperCase()}
-            </span>
+            {renderAvatar()}
           </div>
 
           {/* User Name */}

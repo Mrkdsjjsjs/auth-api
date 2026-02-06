@@ -770,7 +770,11 @@ export default function ChatPage() {
       )}
 
       {/* Call Components */}
-      <CallModal remoteUserName={getOtherUser(currentChat)?.display_name || getOtherUser(currentChat)?.username} />
+      <CallModal
+        remoteUserName={getOtherUser(currentChat)?.display_name || getOtherUser(currentChat)?.username}
+        remoteUserAvatar={getOtherUser(currentChat)?.avatar_url}
+        remoteUserId={getOtherUser(currentChat)?.id}
+      />
       <IncomingCallNotification />
     </div>
   )
