@@ -199,6 +199,14 @@ export const useCallStore = create<CallState>((set, get) => ({
     // Call accepted
     wsService.on('call_accepted', async (data) => {
       console.log('[Call] Call accepted:', data)
+
+      // Prevent duplicate processing
+      const currentStatus = get().status
+      if (currentStatus === 'connecting' || currentStatus === 'active') {
+        console.log('[Call] Already connecting/active, ignoring duplicate accepted')
+        return
+      }
+
       set({ status: 'connecting' })
       callSoundService.stopDialTone()
       callSoundService.playAccepted()
@@ -243,24 +251,31 @@ export const useCallStore = create<CallState>((set, get) => ({
     }, true)
 
     // WebRTC offer
+    let processingOffer = false
     wsService.on('call_offer', async (data) => {
-      console.log('[Call] Received offer, checking if ready...')
+      console.log('[Call] Received offer')
+
+      // Prevent concurrent processing
+      if (processingOffer) {
+        console.log('[Call] Already processing offer, ignoring')
+        return
+      }
+      processingOffer = true
 
       // Wait for peer connection to be ready (max 5 seconds)
       let attempts = 0
       while (!webrtcService.isReady() && attempts < 50) {
-        console.log('[Call] Waiting for peer connection...', attempts)
         await new Promise(resolve => setTimeout(resolve, 100))
         attempts++
       }
 
       if (!webrtcService.isReady()) {
-        console.error('[Call] Peer connection not ready after waiting')
+        console.error('[Call] Peer connection not ready')
+        processingOffer = false
         get().endCall()
         return
       }
 
-      console.log('[Call] Peer connection ready, processing offer')
       try {
         await webrtcService.setRemoteDescription(data.sdp)
         const answer = await webrtcService.createAnswer()
@@ -271,17 +286,29 @@ export const useCallStore = create<CallState>((set, get) => ({
         console.log('[Call] Answer sent')
       } catch (error) {
         console.error('[Call] Failed to handle offer:', error)
+        processingOffer = false
         get().endCall()
       }
     }, true)
 
     // WebRTC answer
+    let answerProcessed = false
     wsService.on('call_answer', async (data) => {
       console.log('[Call] Received answer')
+
+      // Prevent duplicate processing
+      if (answerProcessed) {
+        console.log('[Call] Answer already processed, ignoring')
+        return
+      }
+      answerProcessed = true
+
       try {
         await webrtcService.setRemoteDescription(data.sdp)
+        console.log('[Call] Remote description set')
       } catch (error) {
         console.error('[Call] Failed to handle answer:', error)
+        answerProcessed = false
         get().endCall()
       }
     }, true)
