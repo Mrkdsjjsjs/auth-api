@@ -1,5 +1,5 @@
 /**
- * WebRTC Service - Manages peer connections for audio/video calls
+ * WebRTC Service - Simple and robust
  */
 
 export interface IceServer {
@@ -21,183 +21,79 @@ class WebRTCService {
   private screenStream: MediaStream | null = null
   private config: WebRTCConfig | null = null
   private eventHandlers: Map<string, EventHandler[]> = new Map()
-  private isNegotiating = false
-  private pendingCandidates: RTCIceCandidateInit[] = []
 
-  /**
-   * Initialize with ICE servers from backend
-   */
   async init(iceServers: IceServer[]): Promise<void> {
     this.config = { iceServers }
-    this.pendingCandidates = []
-    this.isNegotiating = false
-    console.log('[WebRTC] Initialized with ICE servers:', iceServers.length)
+    console.log('[WebRTC] Init with', iceServers.length, 'ICE servers')
   }
 
-  /**
-   * Create peer connection and get local media
-   */
-  async createConnection(_isInitiator: boolean): Promise<void> {
+  async createConnection(): Promise<void> {
     if (!this.config) {
-      throw new Error('WebRTC not initialized. Call init() first.')
+      throw new Error('WebRTC not initialized')
     }
 
-    // Create peer connection
     this.peerConnection = new RTCPeerConnection(this.config)
 
-    // Handle ICE candidates
     this.peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
         this.emit('icecandidate', event.candidate)
       }
     }
 
-    // Handle connection state changes
     this.peerConnection.onconnectionstatechange = () => {
-      const state = this.peerConnection?.connectionState
-      console.log('[WebRTC] Connection state:', state)
-      this.emit('connectionstatechange', state)
-
-      // Try ICE restart on failure
-      if (state === 'failed') {
-        console.log('[WebRTC] Connection failed, attempting ICE restart...')
-        this.restartIce()
-      }
+      console.log('[WebRTC] Connection:', this.peerConnection?.connectionState)
+      this.emit('connectionstatechange', this.peerConnection?.connectionState)
     }
 
-    // Handle ICE connection state changes
     this.peerConnection.oniceconnectionstatechange = () => {
-      const state = this.peerConnection?.iceConnectionState
-      console.log('[WebRTC] ICE connection state:', state)
-
-      // Try ICE restart on failure
-      if (state === 'failed') {
-        console.log('[WebRTC] ICE failed, attempting restart...')
-        this.restartIce()
-      }
+      console.log('[WebRTC] ICE:', this.peerConnection?.iceConnectionState)
     }
 
-    // Handle signaling state changes
-    this.peerConnection.onsignalingstatechange = () => {
-      console.log('[WebRTC] Signaling state:', this.peerConnection?.signalingState)
-      this.isNegotiating = this.peerConnection?.signalingState !== 'stable'
-    }
-
-    // Handle negotiation needed (for adding tracks mid-call)
-    this.peerConnection.onnegotiationneeded = async () => {
-      console.log('[WebRTC] Negotiation needed')
-
-      // Prevent glare (simultaneous offers)
-      if (this.isNegotiating) {
-        console.log('[WebRTC] Already negotiating, skipping')
-        return
-      }
-
-      // Whoever adds a track should trigger renegotiation
-      try {
-        this.isNegotiating = true
-        this.emit('needsrenegotiation', null)
-      } catch (error) {
-        console.error('[WebRTC] Negotiation error:', error)
-        this.isNegotiating = false
-      }
-    }
-
-    // Handle incoming tracks (remote audio/video)
     this.peerConnection.ontrack = (event) => {
-      console.log('[WebRTC] Remote track received:', event.track.kind)
+      console.log('[WebRTC] Track received:', event.track.kind)
 
       if (!this.remoteStream) {
         this.remoteStream = new MediaStream()
       }
 
-      // Check if track already exists
-      const existingTrack = this.remoteStream.getTracks().find(t => t.id === event.track.id)
-      if (!existingTrack) {
+      // Add track if not exists
+      const exists = this.remoteStream.getTracks().some(t => t.id === event.track.id)
+      if (!exists) {
         this.remoteStream.addTrack(event.track)
-        console.log('[WebRTC] Track added. Total:', this.remoteStream.getTracks().length)
       }
 
-      // Emit new stream reference
-      const newStream = new MediaStream(this.remoteStream.getTracks())
-      this.remoteStream = newStream
-      this.emit('remotestream', newStream)
+      this.emit('remotestream', this.remoteStream)
     }
 
-    // Get local audio stream
+    // Get microphone
     try {
       this.localStream = await navigator.mediaDevices.getUserMedia({
         audio: true,
         video: false,
       })
 
-      // Add tracks to peer connection
       this.localStream.getTracks().forEach((track) => {
-        if (this.peerConnection && this.localStream) {
-          this.peerConnection.addTrack(track, this.localStream)
-        }
+        this.peerConnection!.addTrack(track, this.localStream!)
       })
 
-      this.emit('localstream', this.localStream)
-      console.log('[WebRTC] Local stream ready')
+      console.log('[WebRTC] Microphone ready')
     } catch (error) {
-      console.error('[WebRTC] Failed to get local stream:', error)
+      console.error('[WebRTC] Microphone error:', error)
       throw error
     }
   }
 
-  /**
-   * Restart ICE connection
-   */
-  private async restartIce(): Promise<void> {
-    if (!this.peerConnection) return
+  async createOffer(): Promise<RTCSessionDescriptionInit> {
+    if (!this.peerConnection) throw new Error('No connection')
 
-    try {
-      const offer = await this.peerConnection.createOffer({ iceRestart: true })
-      await this.peerConnection.setLocalDescription(offer)
-      console.log('[WebRTC] ICE restart offer created')
-      this.emit('needsrenegotiation', null)
-    } catch (error) {
-      console.error('[WebRTC] ICE restart failed:', error)
-    }
-  }
-
-  /**
-   * Create and return SDP offer
-   */
-  async createOffer(iceRestart = false): Promise<RTCSessionDescriptionInit> {
-    if (!this.peerConnection) {
-      throw new Error('Peer connection not created')
-    }
-
-    // Wait for stable state if needed
-    if (this.peerConnection.signalingState !== 'stable') {
-      console.log('[WebRTC] Waiting for stable state...')
-      await new Promise<void>((resolve) => {
-        const check = () => {
-          if (this.peerConnection?.signalingState === 'stable') {
-            resolve()
-          } else {
-            setTimeout(check, 100)
-          }
-        }
-        setTimeout(check, 100)
-      })
-    }
-
-    const offer = await this.peerConnection.createOffer({ iceRestart })
+    const offer = await this.peerConnection.createOffer()
     await this.peerConnection.setLocalDescription(offer)
     console.log('[WebRTC] Offer created')
     return offer
   }
 
-  /**
-   * Create and return SDP answer
-   */
   async createAnswer(): Promise<RTCSessionDescriptionInit> {
-    if (!this.peerConnection) {
-      throw new Error('Peer connection not created')
-    }
+    if (!this.peerConnection) throw new Error('No connection')
 
     const answer = await this.peerConnection.createAnswer()
     await this.peerConnection.setLocalDescription(answer)
@@ -205,177 +101,90 @@ class WebRTCService {
     return answer
   }
 
-  /**
-   * Set remote SDP (offer or answer)
-   */
   async setRemoteDescription(sdp: RTCSessionDescriptionInit): Promise<void> {
-    if (!this.peerConnection) {
-      throw new Error('Peer connection not created')
-    }
-
-    // Handle glare - if we receive offer while we have local offer
-    if (sdp.type === 'offer' && this.peerConnection.signalingState === 'have-local-offer') {
-      console.log('[WebRTC] Glare detected, rolling back')
-      await this.peerConnection.setLocalDescription({ type: 'rollback' })
-    }
+    if (!this.peerConnection) throw new Error('No connection')
 
     await this.peerConnection.setRemoteDescription(new RTCSessionDescription(sdp))
-    console.log('[WebRTC] Remote description set')
-
-    // Add pending ICE candidates
-    for (const candidate of this.pendingCandidates) {
-      try {
-        await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
-      } catch (e) {
-        console.warn('[WebRTC] Failed to add pending candidate:', e)
-      }
-    }
-    this.pendingCandidates = []
+    console.log('[WebRTC] Remote SDP set')
   }
 
-  /**
-   * Add ICE candidate from remote peer
-   */
   async addIceCandidate(candidate: RTCIceCandidateInit): Promise<void> {
-    if (!this.peerConnection) {
-      console.warn('[WebRTC] No peer connection for ICE candidate')
-      return
-    }
-
-    // Queue candidate if remote description not set yet
-    if (!this.peerConnection.remoteDescription) {
-      console.log('[WebRTC] Queuing ICE candidate')
-      this.pendingCandidates.push(candidate)
-      return
-    }
+    if (!this.peerConnection) return
 
     try {
       await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
-    } catch (error) {
-      console.warn('[WebRTC] Failed to add ICE candidate:', error)
+    } catch (e) {
+      // Ignore ICE errors
     }
   }
 
-  /**
-   * Toggle microphone mute
-   */
   setMuted(muted: boolean): void {
-    if (this.localStream) {
-      this.localStream.getAudioTracks().forEach((track) => {
-        track.enabled = !muted
-      })
-      console.log('[WebRTC] Muted:', muted)
-    }
+    this.localStream?.getAudioTracks().forEach((track) => {
+      track.enabled = !muted
+    })
   }
 
-  /**
-   * Start screen sharing
-   */
   async startScreenShare(): Promise<MediaStream> {
-    try {
-      console.log('[WebRTC] Requesting screen share...')
-      this.screenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: false,
-      })
+    console.log('[WebRTC] Starting screen share...')
 
-      if (!this.peerConnection) {
-        throw new Error('No peer connection')
-      }
+    this.screenStream = await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: false,
+    })
 
-      const videoTrack = this.screenStream.getVideoTracks()[0]
-      console.log('[WebRTC] Got video track:', videoTrack.label)
+    if (!this.peerConnection) throw new Error('No connection')
 
-      // Find existing video sender
-      const videoSender = this.peerConnection
-        .getSenders()
-        .find((s) => s.track?.kind === 'video')
+    const videoTrack = this.screenStream.getVideoTracks()[0]
 
-      if (videoSender) {
-        // Replace existing track (no renegotiation needed)
-        console.log('[WebRTC] Replacing existing video track')
-        await videoSender.replaceTrack(videoTrack)
-      } else {
-        // Add new track (will trigger onnegotiationneeded)
-        console.log('[WebRTC] Adding new video track')
-        this.peerConnection.addTrack(videoTrack, this.screenStream)
-      }
+    // Add video track
+    this.peerConnection.addTrack(videoTrack, this.screenStream)
+    console.log('[WebRTC] Video track added')
 
-      // Handle when user stops screen share via browser UI
-      videoTrack.onended = () => {
-        console.log('[WebRTC] Video track ended')
-        this.stopScreenShare()
-        this.emit('screenshareended', null)
-      }
-
-      console.log('[WebRTC] Screen sharing started')
-      this.emit('screenshare', this.screenStream)
-
-      return this.screenStream
-    } catch (error) {
-      console.error('[WebRTC] Failed to start screen share:', error)
-      throw error
+    videoTrack.onended = () => {
+      console.log('[WebRTC] Screen share ended by user')
+      this.stopScreenShare()
+      this.emit('screenshareended', null)
     }
+
+    this.emit('screenshare', this.screenStream)
+    this.emit('needsrenegotiation', null)
+
+    return this.screenStream
   }
 
-  /**
-   * Stop screen sharing
-   */
   stopScreenShare(): void {
     if (this.screenStream) {
-      this.screenStream.getTracks().forEach((track) => track.stop())
+      this.screenStream.getTracks().forEach((t) => t.stop())
       this.screenStream = null
-      console.log('[WebRTC] Screen sharing stopped')
     }
   }
 
-  /**
-   * Close connection and cleanup
-   */
   close(): void {
-    if (this.localStream) {
-      this.localStream.getTracks().forEach((track) => track.stop())
-      this.localStream = null
-    }
+    this.localStream?.getTracks().forEach((t) => t.stop())
+    this.localStream = null
 
     this.stopScreenShare()
 
-    if (this.peerConnection) {
-      this.peerConnection.close()
-      this.peerConnection = null
-    }
+    this.peerConnection?.close()
+    this.peerConnection = null
 
     this.remoteStream = null
-    this.pendingCandidates = []
-    this.isNegotiating = false
 
-    console.log('[WebRTC] Connection closed')
+    console.log('[WebRTC] Closed')
   }
 
-  /**
-   * Get current connection state
-   */
   getConnectionState(): RTCPeerConnectionState | null {
     return this.peerConnection?.connectionState || null
   }
 
-  /**
-   * Check if peer connection is ready
-   */
   isReady(): boolean {
     return this.peerConnection !== null && this.localStream !== null
   }
 
-  /**
-   * Get current remote stream
-   */
   getRemoteStream(): MediaStream | null {
     return this.remoteStream
   }
 
-  /**
-   * Event handling
-   */
   on(event: string, handler: EventHandler): void {
     if (!this.eventHandlers.has(event)) {
       this.eventHandlers.set(event, [])
@@ -386,16 +195,13 @@ class WebRTCService {
   off(event: string, handler: EventHandler): void {
     const handlers = this.eventHandlers.get(event)
     if (handlers) {
-      const index = handlers.indexOf(handler)
-      if (index > -1) {
-        handlers.splice(index, 1)
-      }
+      const idx = handlers.indexOf(handler)
+      if (idx > -1) handlers.splice(idx, 1)
     }
   }
 
   private emit(event: string, data: any): void {
-    const handlers = this.eventHandlers.get(event) || []
-    handlers.forEach((handler) => handler(data))
+    this.eventHandlers.get(event)?.forEach((h) => h(data))
   }
 }
 

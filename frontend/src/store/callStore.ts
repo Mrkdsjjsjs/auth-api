@@ -28,7 +28,6 @@ interface CallState {
   callDuration: number
   error: string | null
 
-  // Actions
   initiateCall: (chatId: string, calleeId: string) => Promise<void>
   acceptCall: () => Promise<void>
   rejectCall: (reason?: string) => void
@@ -60,24 +59,19 @@ export const useCallStore = create<CallState>((set, get) => ({
     try {
       set({ status: 'initiating', chatId, remoteUserId: calleeId, isInitiator: true, error: null })
 
-      // Get ICE servers from backend
       const { data } = await callsApi.getIceServers()
       await webrtcService.init(data.ice_servers)
+      await webrtcService.createConnection()
 
-      // Create peer connection
-      await webrtcService.createConnection(true)
-
-      // Send call initiation
       wsService.send('call_initiate', {
         chat_id: chatId,
         callee_id: calleeId,
       })
 
-      // Start dial tone
       callSoundService.startDialTone()
       set({ status: 'ringing' })
     } catch (error: any) {
-      console.error('[Call] Failed to initiate call:', error)
+      console.error('[Call] Failed to initiate:', error)
       set({ status: 'idle', error: error.message || 'Failed to start call' })
       callSoundService.stopDialTone()
     }
@@ -91,19 +85,14 @@ export const useCallStore = create<CallState>((set, get) => ({
       set({ status: 'connecting' })
       callSoundService.stopRingtone()
 
-      // Get ICE servers from backend
       const { data } = await callsApi.getIceServers()
       await webrtcService.init(data.ice_servers)
+      await webrtcService.createConnection()
 
-      // Create peer connection
-      await webrtcService.createConnection(false)
-
-      // Send accept
       wsService.send('call_accept', { call_id: callId })
-
       callSoundService.playAccepted()
     } catch (error: any) {
-      console.error('[Call] Failed to accept call:', error)
+      console.error('[Call] Failed to accept:', error)
       set({ status: 'idle', error: error.message || 'Failed to accept call' })
       get().rejectCall('failed')
     }
@@ -114,7 +103,6 @@ export const useCallStore = create<CallState>((set, get) => ({
     if (callId) {
       wsService.send('call_reject', { call_id: callId, reason })
     }
-
     callSoundService.stopRingtone()
     callSoundService.playEnded()
     webrtcService.close()
@@ -126,7 +114,6 @@ export const useCallStore = create<CallState>((set, get) => ({
     if (callId) {
       wsService.send('call_end', { call_id: callId })
     }
-
     callSoundService.stopDialTone()
     callSoundService.stopRingtone()
     callSoundService.playEnded()
@@ -136,17 +123,14 @@ export const useCallStore = create<CallState>((set, get) => ({
       clearInterval(durationInterval)
       durationInterval = null
     }
-
     get().reset()
   },
 
   toggleMute: () => {
     const { isMuted, callId } = get()
     const newMuted = !isMuted
-
     webrtcService.setMuted(newMuted)
     set({ isMuted: newMuted })
-
     if (callId) {
       wsService.send('call_mute', { call_id: callId, is_muted: newMuted })
     }
@@ -175,30 +159,18 @@ export const useCallStore = create<CallState>((set, get) => ({
   },
 
   setupCallHandlers: () => {
-    // Call initiated confirmation
+    // Call initiated
     wsService.on('call_initiated', (data) => {
-      console.log('[Call] Call initiated:', data)
-
-      // Only the tab that initiated the call should process this
-      const { status, isInitiator } = get()
-      if (!isInitiator || (status !== 'initiating' && status !== 'ringing')) {
-        console.log('[Call] Not the initiating tab, ignoring call_initiated')
-        return
+      const { status } = get()
+      if (status === 'initiating' || status === 'ringing') {
+        set({ callId: data.call_id })
       }
-
-      set({ callId: data.call_id })
     }, true)
 
     // Incoming call
     wsService.on('call_incoming', (data) => {
-      console.log('[Call] Incoming call:', data)
-
-      // Don't show incoming call if we're already in a call
       const { status } = get()
-      if (status !== 'idle') {
-        console.log('[Call] Already in a call, ignoring incoming')
-        return
-      }
+      if (status !== 'idle') return
 
       set({
         status: 'incoming',
@@ -214,41 +186,23 @@ export const useCallStore = create<CallState>((set, get) => ({
 
     // Call accepted
     wsService.on('call_accepted', async (data) => {
-      console.log('[Call] Call accepted:', data)
-
-      // Only the initiator tab should handle call_accepted
-      const { status, isInitiator } = get()
-      if (!isInitiator) {
-        console.log('[Call] Not the initiator, ignoring call_accepted')
-        return
-      }
-
-      // Prevent duplicate processing
-      if (status === 'connecting' || status === 'active') {
-        console.log('[Call] Already connecting/active, ignoring duplicate accepted')
-        return
-      }
+      const { isInitiator, status } = get()
+      if (!isInitiator || status === 'active') return
 
       set({ status: 'connecting' })
       callSoundService.stopDialTone()
       callSoundService.playAccepted()
 
-      // Create and send offer
       try {
         const offer = await webrtcService.createOffer()
-        wsService.send('call_offer', {
-          call_id: data.call_id,
-          sdp: offer,
-        })
+        wsService.send('call_offer', { call_id: data.call_id, sdp: offer })
       } catch (error) {
         console.error('[Call] Failed to create offer:', error)
-        get().endCall()
       }
     }, true)
 
     // Call rejected
     wsService.on('call_rejected', (data) => {
-      console.log('[Call] Call rejected:', data)
       callSoundService.stopDialTone()
       callSoundService.playEnded()
       webrtcService.close()
@@ -256,13 +210,10 @@ export const useCallStore = create<CallState>((set, get) => ({
       setTimeout(() => get().reset(), 2000)
     }, true)
 
-    // Call accepted on another device (same user, multiple devices)
-    wsService.on('call_accepted_on_other_device', (data) => {
-      console.log('[Call] Call accepted on another device:', data)
-      const currentStatus = get().status
-
-      // Only handle if we're in incoming state (ringing)
-      if (currentStatus === 'incoming') {
+    // Call accepted on another device
+    wsService.on('call_accepted_on_other_device', () => {
+      const { status } = get()
+      if (status === 'incoming') {
         callSoundService.stopRingtone()
         set({ status: 'idle', error: 'Answered on another device' })
         setTimeout(() => get().reset(), 2000)
@@ -270,8 +221,7 @@ export const useCallStore = create<CallState>((set, get) => ({
     }, true)
 
     // Call ended
-    wsService.on('call_ended', (data) => {
-      console.log('[Call] Call ended:', data)
+    wsService.on('call_ended', () => {
       callSoundService.stopDialTone()
       callSoundService.stopRingtone()
       callSoundService.playEnded()
@@ -281,121 +231,62 @@ export const useCallStore = create<CallState>((set, get) => ({
         clearInterval(durationInterval)
         durationInterval = null
       }
-
       get().reset()
     }, true)
 
-    // WebRTC offer
-    let processingOffer = false
+    // Offer received
     wsService.on('call_offer', async (data) => {
-      console.log('[Call] Received offer')
+      const { callId } = get()
+      if (!callId || callId !== data.call_id) return
 
-      // Only process if this tab is handling the call
-      const { callId, status } = get()
-      if (!callId || callId !== data.call_id) {
-        console.log('[Call] Not our call, ignoring offer')
-        return
+      // Wait for connection
+      let tries = 0
+      while (!webrtcService.isReady() && tries < 30) {
+        await new Promise((r) => setTimeout(r, 100))
+        tries++
       }
 
-      // Not in a call
-      if (status === 'idle') {
-        console.log('[Call] Not in a call, ignoring offer')
-        return
-      }
-
-      // Prevent concurrent processing
-      if (processingOffer) {
-        console.log('[Call] Already processing offer, ignoring')
-        return
-      }
-      processingOffer = true
-
-      // Wait for peer connection to be ready (max 3 seconds)
-      let attempts = 0
-      while (!webrtcService.isReady() && attempts < 30) {
-        await new Promise(resolve => setTimeout(resolve, 100))
-        attempts++
-      }
-
-      if (!webrtcService.isReady()) {
-        console.error('[Call] Peer connection not ready')
-        processingOffer = false
-        return
-      }
+      if (!webrtcService.isReady()) return
 
       try {
         await webrtcService.setRemoteDescription(data.sdp)
         const answer = await webrtcService.createAnswer()
-        wsService.send('call_answer', {
-          call_id: data.call_id,
-          sdp: answer,
-        })
-        console.log('[Call] Answer sent')
-        processingOffer = false
-      } catch (error: any) {
-        console.error('[Call] Failed to handle offer:', error)
-        processingOffer = false
-        // Don't end call on offer errors - might be duplicate or timing issue
+        wsService.send('call_answer', { call_id: data.call_id, sdp: answer })
+      } catch (error) {
+        console.error('[Call] Offer handling error:', error)
       }
     }, true)
 
-    // WebRTC answer - track if we've processed initial answer
-    let initialAnswerProcessed = false
+    // Answer received
     wsService.on('call_answer', async (data) => {
-      console.log('[Call] Received answer')
-
-      // Only process if this tab is handling the call
       const { callId, isInitiator } = get()
-      if (!callId || callId !== data.call_id) {
-        console.log('[Call] Not our call, ignoring answer')
-        return
-      }
-
-      // Only the initiator should process answers
-      if (!isInitiator) {
-        console.log('[Call] Not the initiator, ignoring answer')
-        return
-      }
-
-      // Ignore duplicate initial answers
-      if (initialAnswerProcessed && webrtcService.getConnectionState() === 'connected') {
-        console.log('[Call] Already connected, ignoring duplicate answer')
-        return
-      }
+      if (!callId || callId !== data.call_id || !isInitiator) return
 
       try {
         await webrtcService.setRemoteDescription(data.sdp)
-        console.log('[Call] Remote description set')
-        initialAnswerProcessed = true
       } catch (error: any) {
-        // Ignore "wrong state: stable" errors - just means we already processed an answer
-        if (error?.message?.includes('stable')) {
-          console.log('[Call] Already in stable state, ignoring answer')
-          return
+        // Ignore duplicate answer errors
+        if (!error?.message?.includes('stable')) {
+          console.error('[Call] Answer handling error:', error)
         }
-        console.error('[Call] Failed to handle answer:', error)
       }
     }, true)
 
     // ICE candidate
     wsService.on('call_ice_candidate', async (data) => {
-      // Only process if this tab is handling the call
       const { callId } = get()
-      if (!callId || callId !== data.call_id) {
-        return
-      }
-
+      if (!callId || callId !== data.call_id) return
       if (data.candidate) {
         await webrtcService.addIceCandidate(data.candidate)
       }
     }, true)
 
-    // Remote mute status
+    // Mute status
     wsService.on('call_mute', (data) => {
       set({ isRemoteMuted: data.is_muted })
     }, true)
 
-    // Remote screen share status
+    // Screen share status
     wsService.on('call_screen_share', (data) => {
       set({ isRemoteScreenSharing: data.is_sharing })
     }, true)
@@ -406,65 +297,47 @@ export const useCallStore = create<CallState>((set, get) => ({
       callSoundService.stopDialTone()
       callSoundService.stopRingtone()
       webrtcService.close()
-
-      // User-friendly error messages
-      let errorMessage = data.error
-      if (data.error === 'User is offline') {
-        errorMessage = 'User is offline'
-      }
-
-      set({ status: 'ended', error: errorMessage })
+      set({ status: 'ended', error: data.error })
       setTimeout(() => get().reset(), 3000)
     }, true)
 
-    // WebRTC ICE candidate handler
+    // WebRTC: ICE candidate
     webrtcService.on('icecandidate', (candidate) => {
       const { callId } = get()
       if (callId) {
-        wsService.send('call_ice_candidate', {
-          call_id: callId,
-          candidate,
-        })
+        wsService.send('call_ice_candidate', { call_id: callId, candidate })
       }
     })
 
-    // WebRTC connection state handler
+    // WebRTC: Connection state
     webrtcService.on('connectionstatechange', (state) => {
-      console.log('[Call] Connection state:', state)
       if (state === 'connected') {
         set({ status: 'active' })
-
-        // Start call duration timer (only once)
         if (!durationInterval) {
           durationInterval = setInterval(() => {
             set((s) => ({ callDuration: s.callDuration + 1 }))
           }, 1000)
         }
-      } else if (state === 'disconnected' || state === 'failed') {
-        // Don't end call - ICE restart will attempt recovery
-        // Connection will recover or user can end manually
-        console.log('[Call] Connection issue, attempting recovery...')
       }
     })
 
-    // Handle renegotiation (for screen share)
+    // WebRTC: Renegotiation (for screen share)
     webrtcService.on('needsrenegotiation', async () => {
-      const { callId } = get()
+      const { callId, isInitiator } = get()
       if (!callId) return
 
-      console.log('[Call] Renegotiation needed, creating new offer')
-      try {
-        const offer = await webrtcService.createOffer()
-        wsService.send('call_offer', {
-          call_id: callId,
-          sdp: offer,
-        })
-      } catch (error) {
-        console.error('[Call] Renegotiation failed:', error)
+      // Only initiator sends offers, callee waits
+      if (isInitiator) {
+        try {
+          const offer = await webrtcService.createOffer()
+          wsService.send('call_offer', { call_id: callId, sdp: offer })
+        } catch (error) {
+          console.error('[Call] Renegotiation error:', error)
+        }
       }
     })
 
-    // Screen share ended by browser
+    // WebRTC: Screen share ended
     webrtcService.on('screenshareended', () => {
       const { callId } = get()
       set({ isScreenSharing: false })
