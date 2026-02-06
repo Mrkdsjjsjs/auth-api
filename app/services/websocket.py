@@ -13,9 +13,7 @@ class ConnectionManager:
         self.active_connections: Dict[str, List[WebSocket]] = {}
 
     async def connect(self, websocket: WebSocket, user_id: str):
-        """Accept and store a new WebSocket connection"""
-        await websocket.accept()
-
+        """Store a new WebSocket connection (already accepted by caller)"""
         if user_id not in self.active_connections:
             self.active_connections[user_id] = []
 
