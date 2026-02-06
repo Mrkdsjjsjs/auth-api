@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useCallStore } from '../store/callStore'
-import { PhoneOff, Mic, MicOff, Monitor } from 'lucide-react'
+import { PhoneOff, Mic, MicOff, Monitor, MonitorOff, Maximize2, Minimize2 } from 'lucide-react'
 import webrtcService from '../services/webrtc'
 
 // Emoji avatars based on user id hash
@@ -46,23 +46,48 @@ export default function CallModal({ remoteUserName, remoteUserAvatar, remoteUser
   } = useCallStore()
 
   const audioRef = useRef<HTMLAudioElement>(null)
+  const remoteVideoRef = useRef<HTMLVideoElement>(null)
+  const localVideoRef = useRef<HTMLVideoElement>(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+
   const displayName = remoteUserName || storeRemoteUserName || 'Unknown'
   const avatarUrl = remoteUserAvatar || storeRemoteUserAvatar
   const oderId = remoteUserId || storeRemoteUserId || 'unknown'
 
-  // Handle remote stream
+  // Handle remote stream (audio and video)
   useEffect(() => {
     const handleRemoteStream = (stream: MediaStream) => {
+      // Audio
       if (audioRef.current) {
         audioRef.current.srcObject = stream
         audioRef.current.play().catch(console.error)
       }
+      // Video (for screen share)
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = stream
+      }
+    }
+
+    const handleScreenShare = (stream: MediaStream) => {
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream
+      }
+    }
+
+    const handleScreenShareEnded = () => {
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = null
+      }
     }
 
     webrtcService.on('remotestream', handleRemoteStream)
+    webrtcService.on('screenshare', handleScreenShare)
+    webrtcService.on('screenshareended', handleScreenShareEnded)
 
     return () => {
       webrtcService.off('remotestream', handleRemoteStream)
+      webrtcService.off('screenshare', handleScreenShare)
+      webrtcService.off('screenshareended', handleScreenShareEnded)
     }
   }, [])
 
@@ -101,76 +126,103 @@ export default function CallModal({ remoteUserName, remoteUserAvatar, remoteUser
     return <span className="call-avatar-emoji">{getEmojiAvatar(oderId)}</span>
   }
 
+  const hasVideo = isScreenSharing || isRemoteScreenSharing
+
   return (
-    <div className="call-modal-overlay">
-      <div className="call-modal">
-        <div className="call-modal-content">
-          {/* User Avatar */}
-          <div className="call-avatar">
+    <div className={`call-fullscreen ${hasVideo ? 'has-video' : ''}`}>
+      {/* Video area */}
+      {hasVideo && (
+        <div className="call-video-container">
+          {/* Remote screen share */}
+          {isRemoteScreenSharing && (
+            <video
+              ref={remoteVideoRef}
+              autoPlay
+              playsInline
+              className="call-video-main"
+            />
+          )}
+
+          {/* Local screen share preview */}
+          {isScreenSharing && (
+            <video
+              ref={localVideoRef}
+              autoPlay
+              playsInline
+              muted
+              className={isRemoteScreenSharing ? 'call-video-pip' : 'call-video-main'}
+            />
+          )}
+        </div>
+      )}
+
+      {/* User info overlay */}
+      <div className={`call-info-overlay ${hasVideo ? 'compact' : ''}`}>
+        {!hasVideo && (
+          <div className="call-avatar-large">
             {renderAvatar()}
           </div>
+        )}
 
-          {/* User Name */}
-          <div className="call-user-name">{displayName}</div>
-
-          {/* Status */}
-          <div className="call-status">
+        <div className="call-user-info">
+          <div className="call-user-name-large">{displayName}</div>
+          <div className="call-status-text">
             {getStatusText()}
             {isRemoteMuted && status === 'active' && (
-              <span className="call-remote-muted">
+              <span className="call-muted-badge">
                 <MicOff size={14} /> Muted
               </span>
             )}
           </div>
-
-          {/* Screen share indicator */}
-          {isRemoteScreenSharing && (
-            <div className="call-screen-share-indicator">
-              <Monitor size={16} /> Screen sharing
-            </div>
-          )}
-
-          {/* Error message */}
-          {error && (
-            <div className="call-error">{error}</div>
-          )}
         </div>
 
-        {/* Controls */}
-        <div className="call-controls">
-          {/* Mute button */}
-          <button
-            className={`call-btn ${isMuted ? 'active' : ''}`}
-            onClick={toggleMute}
-            disabled={status !== 'active'}
-            title={isMuted ? 'Unmute' : 'Mute'}
-          >
-            {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
-          </button>
-
-          {/* Screen share button */}
-          <button
-            className={`call-btn ${isScreenSharing ? 'active' : ''}`}
-            onClick={toggleScreenShare}
-            disabled={status !== 'active'}
-            title={isScreenSharing ? 'Stop sharing' : 'Share screen'}
-          >
-            <Monitor size={24} />
-          </button>
-
-          {/* End call button */}
-          <button
-            className="call-btn end-call"
-            onClick={endCall}
-            title="End call"
-          >
-            <PhoneOff size={24} />
-          </button>
-        </div>
-
-        {/* Hidden audio element for remote stream */}
-        <audio ref={audioRef} autoPlay />
+        {/* Small avatar when video is showing */}
+        {hasVideo && (
+          <div className="call-avatar-small">
+            {renderAvatar()}
+          </div>
+        )}
       </div>
+
+      {/* Error message */}
+      {error && (
+        <div className="call-error-banner">{error}</div>
+      )}
+
+      {/* Controls */}
+      <div className="call-controls-bar">
+        <button
+          className={`call-control-btn ${isMuted ? 'active' : ''}`}
+          onClick={toggleMute}
+          disabled={status !== 'active'}
+          title={isMuted ? 'Unmute' : 'Mute'}
+        >
+          {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
+          <span>{isMuted ? 'Unmute' : 'Mute'}</span>
+        </button>
+
+        <button
+          className={`call-control-btn ${isScreenSharing ? 'active' : ''}`}
+          onClick={toggleScreenShare}
+          disabled={status !== 'active'}
+          title={isScreenSharing ? 'Stop sharing' : 'Share screen'}
+        >
+          {isScreenSharing ? <MonitorOff size={24} /> : <Monitor size={24} />}
+          <span>{isScreenSharing ? 'Stop' : 'Share'}</span>
+        </button>
+
+        <button
+          className="call-control-btn end-call"
+          onClick={endCall}
+          title="End call"
+        >
+          <PhoneOff size={24} />
+          <span>End</span>
+        </button>
+      </div>
+
+      {/* Hidden audio element */}
+      <audio ref={audioRef} autoPlay />
     </div>
   )
 }

@@ -933,14 +933,13 @@ body {
 
 /* ============== CALL STYLES ============== */
 
-/* Call Modal - Fullscreen overlay */
-.call-modal-overlay {
+/* Call Fullscreen */
+.call-fullscreen {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.95);
+  background: #0a0a0a;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
   z-index: 200;
   animation: fadeIn 0.2s ease;
 }
@@ -950,29 +949,66 @@ body {
   to { opacity: 1; }
 }
 
-.call-modal {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 40px;
-  width: 100%;
-  max-width: 400px;
-  text-align: center;
-}
-
-.call-modal-content {
+/* Video container */
+.call-video-container {
   flex: 1;
+  position: relative;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.call-video-main {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.call-video-pip {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  width: 200px;
+  height: 150px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+/* Info overlay */
+.call-info-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 80px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  margin-bottom: 60px;
+  pointer-events: none;
 }
 
-.call-avatar {
-  width: 120px;
-  height: 120px;
+.call-info-overlay.compact {
+  top: 20px;
+  left: 20px;
+  right: auto;
+  bottom: auto;
+  flex-direction: row;
+  gap: 12px;
+  padding: 12px 20px;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 50px;
+  backdrop-filter: blur(10px);
+}
+
+.call-avatar-large {
+  width: 150px;
+  height: 150px;
   border-radius: 50%;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   display: flex;
@@ -982,15 +1018,36 @@ body {
   animation: pulse 2s infinite;
 }
 
+.call-avatar-small {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.call-avatar-small .call-avatar-emoji {
+  font-size: 22px;
+}
+
+.call-avatar-small .call-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 @keyframes pulse {
   0%, 100% { transform: scale(1); opacity: 1; }
   50% { transform: scale(1.05); opacity: 0.9; }
 }
 
 .call-avatar-emoji {
-  font-size: 48px;
+  font-size: 64px;
   color: white;
-  font-weight: 600;
 }
 
 .call-avatar-img {
@@ -1000,22 +1057,42 @@ body {
   border-radius: 50%;
 }
 
-.call-user-name {
-  font-size: 28px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 8px;
+.call-user-info {
+  text-align: center;
 }
 
-.call-status {
+.call-info-overlay.compact .call-user-info {
+  text-align: left;
+}
+
+.call-user-name-large {
+  font-size: 32px;
+  font-weight: 600;
+  color: white;
+  margin-bottom: 8px;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+.call-info-overlay.compact .call-user-name-large {
   font-size: 16px;
-  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+
+.call-status-text {
+  font-size: 18px;
+  color: rgba(255, 255, 255, 0.7);
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 12px;
 }
 
-.call-remote-muted {
+.call-info-overlay.compact .call-status-text {
+  font-size: 13px;
+  justify-content: flex-start;
+}
+
+.call-muted-badge {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -1023,63 +1100,69 @@ body {
   font-size: 13px;
 }
 
-.call-screen-share-indicator {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--accent);
+.call-error-banner {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(239, 68, 68, 0.9);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 8px;
   font-size: 14px;
-  margin-top: 12px;
-  padding: 6px 12px;
-  background: rgba(59, 130, 246, 0.15);
-  border-radius: 20px;
 }
 
-.call-error {
-  color: var(--error);
-  font-size: 14px;
-  margin-top: 12px;
-}
-
-/* Call Controls */
-.call-controls {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-
-.call-btn {
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  border: none;
-  cursor: pointer;
+/* Controls bar */
+.call-controls-bar {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 24px;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+}
+
+.call-control-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 20px;
+  border-radius: 16px;
+  border: none;
+  cursor: pointer;
   transition: all 0.2s;
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  min-width: 80px;
 }
 
-.call-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-  transform: scale(1.05);
+.call-control-btn span {
+  font-size: 12px;
+  opacity: 0.8;
 }
 
-.call-btn:disabled {
+.call-control-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+}
+
+.call-control-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
-.call-btn.active {
+.call-control-btn.active {
   background: var(--accent);
-  color: white;
 }
 
-.call-btn.end-call {
+.call-control-btn.end-call {
   background: var(--error);
-  color: white;
+}
+
+.call-control-btn.end-call:hover {
+  background: #dc2626;
 }
 
 .call-btn.end-call:hover {
@@ -1287,25 +1370,37 @@ body {
     height: 56px;
   }
 
-  .call-modal {
-    padding: 20px;
+  .call-video-pip {
+    width: 120px;
+    height: 90px;
+    bottom: 100px;
+    right: 10px;
   }
 
-  .call-avatar {
-    width: 100px;
-    height: 100px;
+  .call-avatar-large {
+    width: 120px;
+    height: 120px;
   }
 
   .call-avatar-emoji {
-    font-size: 40px;
+    font-size: 48px;
   }
 
-  .call-user-name {
+  .call-user-name-large {
     font-size: 24px;
   }
 
-  .call-btn {
-    width: 56px;
-    height: 56px;
+  .call-controls-bar {
+    gap: 12px;
+    padding: 16px;
+  }
+
+  .call-control-btn {
+    padding: 10px 14px;
+    min-width: 70px;
+  }
+
+  .call-control-btn span {
+    font-size: 10px;
   }
 }
