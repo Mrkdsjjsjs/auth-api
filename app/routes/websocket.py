@@ -54,7 +54,10 @@ async def websocket_endpoint(
             await websocket.close(code=4001, reason="Invalid token")
             return
 
-        await connection_manager.connect(websocket, user.id)
+        # Save user_id before session closes
+        user_id = user.id
+
+        await connection_manager.connect(websocket, user_id)
 
         # Update user online status
         user.is_online = True
@@ -63,30 +66,30 @@ async def websocket_endpoint(
         session.commit()
 
         # Broadcast online status
-        await connection_manager.broadcast_user_status(user.id, True)
+        await connection_manager.broadcast_user_status(user_id, True)
 
         try:
             while True:
                 data = await websocket.receive_text()
                 try:
                     message = json.loads(data)
-                    await handle_websocket_message(message, user.id, session)
+                    await handle_websocket_message(message, user_id, session)
                 except json.JSONDecodeError:
                     await websocket.send_json({"error": "Invalid JSON"})
 
         except WebSocketDisconnect:
-            connection_manager.disconnect(websocket, user.id)
+            connection_manager.disconnect(websocket, user_id)
 
             # Update offline status
-            with SQLSession(engine) as session:
-                user = session.get(User, user.id)
-                if user:
-                    user.is_online = False
-                    user.last_seen = datetime.utcnow()
-                    session.add(user)
-                    session.commit()
+            with SQLSession(engine) as new_session:
+                db_user = new_session.get(User, user_id)
+                if db_user:
+                    db_user.is_online = False
+                    db_user.last_seen = datetime.utcnow()
+                    new_session.add(db_user)
+                    new_session.commit()
 
-            await connection_manager.broadcast_user_status(user.id, False)
+            await connection_manager.broadcast_user_status(user_id, False)
 
 
 async def handle_websocket_message(message: dict, user_id: str, session: Session):
