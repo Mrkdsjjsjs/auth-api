@@ -236,8 +236,14 @@ export const useCallStore = create<CallState>((set, get) => ({
 
     // Offer received
     wsService.on('call_offer', async (data) => {
+      console.log('[Call] Offer received for call:', data.call_id)
       const { callId } = get()
-      if (!callId || callId !== data.call_id) return
+      console.log('[Call] Our callId:', callId)
+
+      if (!callId || callId !== data.call_id) {
+        console.log('[Call] Ignoring offer - callId mismatch')
+        return
+      }
 
       // Wait for connection
       let tries = 0
@@ -246,11 +252,17 @@ export const useCallStore = create<CallState>((set, get) => ({
         tries++
       }
 
-      if (!webrtcService.isReady()) return
+      if (!webrtcService.isReady()) {
+        console.log('[Call] WebRTC not ready after waiting')
+        return
+      }
 
       try {
+        console.log('[Call] Setting remote description from offer')
         await webrtcService.setRemoteDescription(data.sdp)
+        console.log('[Call] Creating answer')
         const answer = await webrtcService.createAnswer()
+        console.log('[Call] Sending answer')
         wsService.send('call_answer', { call_id: data.call_id, sdp: answer })
       } catch (error) {
         console.error('[Call] Offer handling error:', error)
@@ -259,13 +271,24 @@ export const useCallStore = create<CallState>((set, get) => ({
 
     // Answer received
     wsService.on('call_answer', async (data) => {
+      console.log('[Call] Answer received for call:', data.call_id)
       const { callId, isInitiator } = get()
-      if (!callId || callId !== data.call_id || !isInitiator) return
+      console.log('[Call] Our callId:', callId, 'isInitiator:', isInitiator)
+
+      if (!callId || callId !== data.call_id) {
+        console.log('[Call] Ignoring answer - callId mismatch')
+        return
+      }
+      if (!isInitiator) {
+        console.log('[Call] Ignoring answer - not initiator')
+        return
+      }
 
       try {
+        console.log('[Call] Setting remote description from answer')
         await webrtcService.setRemoteDescription(data.sdp)
+        console.log('[Call] Remote description set successfully')
       } catch (error: any) {
-        // Ignore duplicate answer errors
         if (!error?.message?.includes('stable')) {
           console.error('[Call] Answer handling error:', error)
         }

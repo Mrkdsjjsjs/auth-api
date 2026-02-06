@@ -21,9 +21,13 @@ class WebRTCService {
   private screenStream: MediaStream | null = null
   private config: WebRTCConfig | null = null
   private eventHandlers: Map<string, EventHandler[]> = new Map()
+  private pendingCandidates: RTCIceCandidateInit[] = []
+  private hasRemoteDescription = false
 
   async init(iceServers: IceServer[]): Promise<void> {
     this.config = { iceServers }
+    this.pendingCandidates = []
+    this.hasRemoteDescription = false
     console.log('[WebRTC] Init with', iceServers.length, 'ICE servers')
   }
 
@@ -105,16 +109,34 @@ class WebRTCService {
     if (!this.peerConnection) throw new Error('No connection')
 
     await this.peerConnection.setRemoteDescription(new RTCSessionDescription(sdp))
+    this.hasRemoteDescription = true
     console.log('[WebRTC] Remote SDP set')
+
+    // Add pending ICE candidates
+    console.log('[WebRTC] Adding', this.pendingCandidates.length, 'pending candidates')
+    for (const candidate of this.pendingCandidates) {
+      try {
+        await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
+      } catch (e) {
+        // Ignore
+      }
+    }
+    this.pendingCandidates = []
   }
 
   async addIceCandidate(candidate: RTCIceCandidateInit): Promise<void> {
     if (!this.peerConnection) return
 
+    // Queue if no remote description yet
+    if (!this.hasRemoteDescription) {
+      this.pendingCandidates.push(candidate)
+      return
+    }
+
     try {
       await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
     } catch (e) {
-      // Ignore ICE errors
+      // Ignore
     }
   }
 
@@ -169,6 +191,8 @@ class WebRTCService {
     this.peerConnection = null
 
     this.remoteStream = null
+    this.pendingCandidates = []
+    this.hasRemoteDescription = false
 
     console.log('[WebRTC] Closed')
   }
