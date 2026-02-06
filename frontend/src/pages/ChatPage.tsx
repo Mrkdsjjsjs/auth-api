@@ -550,24 +550,14 @@ export default function ChatPage() {
               </button>
             </div>
 
-            <div style={{ position: 'relative' }}>
-              <Search
-                size={18}
-                style={{
-                  position: 'absolute',
-                  left: 12,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  color: 'var(--text-secondary)',
-                }}
-              />
+            <div className="search-wrapper">
+              <Search size={18} className="search-icon" />
               <input
                 type="text"
                 className="search-input"
                 placeholder="Search users..."
                 value={searchQuery}
                 onChange={(e) => handleSearch(e.target.value)}
-                style={{ paddingLeft: 40 }}
               />
             </div>
 
