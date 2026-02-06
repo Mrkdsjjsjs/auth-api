@@ -136,9 +136,6 @@ async def handle_websocket_message(message: dict, user_id: str, session: Session
         chat_id = message.get("chat_id")
         message_id = message.get("message_id")
         if chat_id and message_id:
-            from app.models.chat import ChatMember
-            from sqlmodel import select
-
             member = session.exec(
                 select(ChatMember).where(
                     ChatMember.chat_id == chat_id,
