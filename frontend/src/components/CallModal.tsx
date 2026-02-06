@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { useCallStore } from '../store/callStore'
-import { PhoneOff, Mic, MicOff, Monitor, MonitorOff, Maximize2, Minimize2 } from 'lucide-react'
+import { PhoneOff, Mic, MicOff, Monitor, MonitorOff } from 'lucide-react'
 import webrtcService from '../services/webrtc'
 
 // Emoji avatars based on user id hash
@@ -48,7 +48,6 @@ export default function CallModal({ remoteUserName, remoteUserAvatar, remoteUser
   const audioRef = useRef<HTMLAudioElement>(null)
   const remoteVideoRef = useRef<HTMLVideoElement>(null)
   const localVideoRef = useRef<HTMLVideoElement>(null)
-  const [isFullscreen, setIsFullscreen] = useState(false)
 
   const displayName = remoteUserName || storeRemoteUserName || 'Unknown'
   const avatarUrl = remoteUserAvatar || storeRemoteUserAvatar
