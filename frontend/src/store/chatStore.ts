@@ -233,24 +233,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const recipientMember = currentChat?.members.find(m => m.user_id !== currentUser?.id)
       const recipientUserId = recipientMember?.user_id
 
-      // E2E: encrypt for recipient AND for self
-      let encryptedForRecipient = null
-      let encryptedForSelf = null
+      // E2E: encrypt for SERVER (server will decrypt and store with AES)
+      let encryptedForServer = null
 
-      if (recipientUserId && currentUser?.id) {
+      if (currentUser?.id) {
         const encryptionStore = (await import('./encryptionStore')).useEncryptionStore.getState()
 
-        // Encrypt for recipient
-        encryptedForRecipient = await encryptionStore.encryptMessage(content, recipientUserId)
-
-        // Encrypt for self (so we can read our own messages)
-        encryptedForSelf = await encryptionStore.encryptMessage(content, currentUser.id)
+        // Encrypt for server (not recipient!)
+        encryptedForServer = await encryptionStore.encryptForServer(content)
       }
 
-      // Send both encrypted versions
+      // Send encrypted message to server
       const { data } = await messagesApi.sendE2E(currentChatId, content, {
-        encrypted_for_recipient: encryptedForRecipient,
-        encrypted_for_sender: encryptedForSelf,
+        encrypted_for_recipient: encryptedForServer,  // This goes to server, not recipient
+        encrypted_for_sender: null,  // Not needed anymore
         recipient_user_id: recipientUserId,
       })
 
@@ -392,15 +388,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       })
 
       // Now send a message with the file reference
-      // Encrypt message content (filename) for both users
+      // Encrypt message content for server
       const messageContent = `[File: ${file.name}]`
-      const encryptedForRecipient = await encryptionStore.encryptMessage(messageContent, recipientUserId)
-      const encryptedForSelf = await encryptionStore.encryptMessage(messageContent, currentUser.id)
+      const encryptedForServer = await encryptionStore.encryptForServer(messageContent)
 
       // Send message with encrypted_file_id
       const { data: messageData } = await messagesApi.sendE2E(currentChatId, messageContent, {
-        encrypted_for_recipient: encryptedForRecipient,
-        encrypted_for_sender: encryptedForSelf,
+        encrypted_for_recipient: encryptedForServer,  // Goes to server
+        encrypted_for_sender: null,
         recipient_user_id: recipientUserId,
         encrypted_file_id: uploadResponse.file.id,
         message_type: messageType,

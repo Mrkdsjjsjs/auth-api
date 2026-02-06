@@ -90,7 +90,7 @@ export const messagesApi = {
       content,
       reply_to_id: replyToId,
     }),
-  sendE2E: (chatId: string, _plaintext: string, encryption: {
+  sendE2E: (chatId: string, plaintextFallback: string, encryption: {
     encrypted_for_recipient: { encrypted_content: string; ephemeral_public_key: string } | null
     encrypted_for_sender: { encrypted_content: string; ephemeral_public_key: string } | null
     recipient_user_id: string | undefined
@@ -98,7 +98,8 @@ export const messagesApi = {
     message_type?: string
   }) =>
     api.post(`/api/chats/${chatId}/messages`, {
-      content: null,  // No plaintext stored
+      // Send plaintext as fallback only if encryption failed
+      content: encryption.encrypted_for_recipient ? null : plaintextFallback,
       encrypted_for_recipient: encryption.encrypted_for_recipient,
       encrypted_for_sender: encryption.encrypted_for_sender,
       recipient_user_id: encryption.recipient_user_id,
@@ -121,6 +122,9 @@ export const keysApi = {
   saveBackup: (data: { encrypted_blob: string; salt: string }) =>
     api.post('/api/keys/backup', data),
   getBackup: () => api.get('/api/keys/backup'),
+  // Exchange keys with server for E2E transport
+  exchangeKeys: (clientPublicKey: string) =>
+    api.post('/api/keys/exchange', { client_public_key: clientPublicKey }),
 }
 
 // Encrypted Files - E2E encrypted file storage

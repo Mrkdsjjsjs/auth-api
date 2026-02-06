@@ -4,6 +4,7 @@ const KEYS_STORED_FLAG = 'encryption_keys_stored'
 const PUBLIC_KEY = 'encryption_public_key'
 const SECRET_KEY = 'encryption_secret_key'
 const CURRENT_KEY_ID = 'encryption_current_key_id'
+const SERVER_PUBLIC_KEY = 'encryption_server_public_key'
 
 export class KeyStorageService {
   hasStoredKeys(): boolean {
@@ -47,6 +48,7 @@ export class KeyStorageService {
     localStorage.removeItem(SECRET_KEY)
     localStorage.removeItem(KEYS_STORED_FLAG)
     localStorage.removeItem(CURRENT_KEY_ID)
+    localStorage.removeItem(SERVER_PUBLIC_KEY)
   }
 
   setCurrentKeyId(keyId: string): void {
@@ -55,6 +57,14 @@ export class KeyStorageService {
 
   getCurrentKeyId(): string | null {
     return localStorage.getItem(CURRENT_KEY_ID)
+  }
+
+  setServerPublicKey(serverPublicKey: string): void {
+    localStorage.setItem(SERVER_PUBLIC_KEY, serverPublicKey)
+  }
+
+  getServerPublicKey(): string | null {
+    return localStorage.getItem(SERVER_PUBLIC_KEY)
   }
 }
 

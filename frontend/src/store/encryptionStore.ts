@@ -13,7 +13,7 @@ interface EncryptionState {
   hasKeys: boolean
   currentKeyId: string | null
   identityKeyPair: IdentityKeyPair | null
-  recipientKeysCache: Map<string, string>
+  serverPublicKey: string | null  // Server's public key for E2E transport
 
   initialize: () => Promise<void>
   generateKeys: () => Promise<void>
@@ -21,11 +21,10 @@ interface EncryptionState {
     encrypted_content?: string | null
     ephemeral_public_key?: string | null
   }) => Promise<string>
-  encryptMessage: (plaintext: string, recipientUserId: string) => Promise<{
+  encryptForServer: (plaintext: string) => Promise<{
     encrypted_content: string
     ephemeral_public_key: string
   } | null>
-  getRecipientPublicKey: (userId: string) => Promise<string | null>
   clearKeys: () => void
 }
 
@@ -34,7 +33,7 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
   hasKeys: false,
   currentKeyId: null,
   identityKeyPair: null,
-  recipientKeysCache: new Map(),
+  serverPublicKey: null,
 
   initialize: async () => {
     console.log('[Encryption] Starting initialization...')
@@ -47,6 +46,7 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
           console.log('[Encryption] Loading keys from localStorage...')
           const keyPair = keyStorageService.loadKeys()
           const currentKeyId = keyStorageService.getCurrentKeyId()
+          const serverPublicKey = keyStorageService.getServerPublicKey()
           console.log('[Encryption] Keys loaded, keyId:', currentKeyId)
 
           set({
@@ -54,7 +54,15 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
             hasKeys: true,
             identityKeyPair: keyPair,
             currentKeyId,
+            serverPublicKey,
           })
+
+          // If no server public key, exchange keys now
+          if (!serverPublicKey && keyPair) {
+            console.log('[Encryption] No server key, initiating exchange...')
+            await exchangeKeysWithServer(keyPair)
+          }
+
           console.log('[Encryption] SUCCESS - Initialized from localStorage')
         } catch (loadError) {
           console.warn('[Encryption] Failed to load keys, regenerating...', loadError)
@@ -88,6 +96,9 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
       console.log('[Encryption] Registered on server, id:', registeredKey.id)
 
       keyStorageService.setCurrentKeyId(registeredKey.id)
+
+      // Exchange keys with server
+      await exchangeKeysWithServer(keyPair)
 
       set({
         isInitialized: true,
@@ -127,45 +138,34 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
     )
   },
 
-  getRecipientPublicKey: async (userId: string) => {
-    const { recipientKeysCache } = get()
-
-    // Check cache first
-    if (recipientKeysCache.has(userId)) {
-      return recipientKeysCache.get(userId)!
-    }
-
-    try {
-      const { data } = await keysApi.getUserKey(userId)
-      if (data.public_key) {
-        recipientKeysCache.set(userId, data.public_key)
-        return data.public_key
-      }
-    } catch (error) {
-      console.warn('[Encryption] Failed to get recipient public key:', error)
-    }
-    return null
-  },
-
-  encryptMessage: async (plaintext: string, recipientUserId: string) => {
-    const { identityKeyPair, getRecipientPublicKey } = get()
+  encryptForServer: async (plaintext: string) => {
+    const { identityKeyPair, serverPublicKey } = get()
 
     if (!identityKeyPair) {
       console.warn('[Encryption] No identity key pair')
       return null
     }
 
-    const recipientPublicKeyB64 = await getRecipientPublicKey(recipientUserId)
-    if (!recipientPublicKeyB64) {
-      console.warn('[Encryption] Recipient has no public key')
+    if (!serverPublicKey) {
+      console.warn('[Encryption] No server public key, trying to exchange...')
+      await exchangeKeysWithServer(identityKeyPair)
+      const newServerKey = get().serverPublicKey
+      if (!newServerKey) {
+        console.error('[Encryption] Failed to get server public key')
+        return null
+      }
+    }
+
+    const currentServerKey = get().serverPublicKey
+    if (!currentServerKey) {
       return null
     }
 
     try {
-      const recipientPublicKey = base64ToUint8Array(recipientPublicKeyB64)
+      const serverPublicKeyBytes = base64ToUint8Array(currentServerKey)
       const encrypted = cryptoService.encryptForRecipient(
         plaintext,
-        recipientPublicKey
+        serverPublicKeyBytes
       )
 
       return {
@@ -173,7 +173,7 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
         ephemeral_public_key: encrypted.ephemeralPublicKey,
       }
     } catch (error) {
-      console.error('[Encryption] Failed to encrypt message:', error)
+      console.error('[Encryption] Failed to encrypt for server:', error)
       return null
     }
   },
@@ -185,6 +185,21 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
       hasKeys: false,
       currentKeyId: null,
       identityKeyPair: null,
+      serverPublicKey: null,
     })
   },
 }))
+
+// Helper function to exchange keys with server
+async function exchangeKeysWithServer(keyPair: IdentityKeyPair) {
+  try {
+    const { data } = await keysApi.exchangeKeys(uint8ArrayToBase64(keyPair.publicKey))
+    const serverPublicKey = data.server_public_key
+    console.log('[Encryption] Got server public key')
+
+    keyStorageService.setServerPublicKey(serverPublicKey)
+    useEncryptionStore.setState({ serverPublicKey })
+  } catch (error) {
+    console.error('[Encryption] Failed to exchange keys with server:', error)
+  }
+}

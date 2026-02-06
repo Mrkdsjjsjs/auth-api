@@ -16,7 +16,7 @@ class Message(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     chat_id: str = Field(foreign_key="chat.id", index=True)
     sender_id: str = Field(foreign_key="user.id")
-    content: Optional[str] = Field(default=None)  # Plaintext fallback
+    content: Optional[str] = Field(default=None)  # AES encrypted for storage (v2) or plaintext (v0)
     message_type: MessageType = Field(default=MessageType.text)
     file_url: Optional[str] = Field(default=None)
     file_id: Optional[str] = Field(default=None, foreign_key="file.id")
@@ -24,12 +24,11 @@ class Message(SQLModel, table=True):
     is_edited: bool = Field(default=False)
     is_deleted: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    # E2E encryption fields
+    # Encryption version: 0=plaintext, 1=old E2E (deprecated), 2=AES storage
     encryption_version: int = Field(default=0)
-    # Encrypted for recipient
+    # Legacy E2E fields (kept for old messages, not used in v2)
     encrypted_content: Optional[str] = Field(default=None)
     ephemeral_public_key: Optional[str] = Field(default=None)
-    # Encrypted for sender (so they can read their own messages)
     encrypted_for_sender: Optional[str] = Field(default=None)
     ephemeral_key_for_sender: Optional[str] = Field(default=None)
     sender_key_id: Optional[str] = Field(default=None)

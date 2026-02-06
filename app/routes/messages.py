@@ -15,6 +15,7 @@ from app.schemas.user import UserPublicResponse
 from app.auth import get_current_user
 from app.services.websocket import connection_manager
 from app.services.encryption_service import encryption_service
+
 router = APIRouter(tags=["messages"])
 
 
@@ -31,14 +32,14 @@ def get_user_public_key(user_id: str, session: Session) -> Optional[str]:
 
 
 def build_message_response(message: Message, session: Session, encrypt_for_user_id: Optional[str] = None) -> dict:
-    """Build message response dict, optionally encrypting for recipient"""
+    """Build message response dict, encrypting for recipient via E2E transport"""
     sender = session.get(User, message.sender_id)
 
     response = {
         "id": message.id,
         "chat_id": message.chat_id,
         "sender_id": message.sender_id,
-        "content": message.content if not message.is_deleted else None,
+        "content": None,  # Always None - we use encrypted_content for transport
         "message_type": message.message_type,
         "file_url": message.file_url if not message.is_deleted else None,
         "file_id": message.file_id,
@@ -54,8 +55,12 @@ def build_message_response(message: Message, session: Session, encrypt_for_user_
         "encrypted_file": None,
     }
 
+    # Handle deleted messages
+    if message.is_deleted:
+        return response
+
     # Add encrypted file info if present
-    if message.encrypted_file_id and not message.is_deleted and encrypt_for_user_id:
+    if message.encrypted_file_id and encrypt_for_user_id:
         enc_file = session.get(EncryptedFile, message.encrypted_file_id)
         if enc_file:
             is_sender = enc_file.uploaded_by == encrypt_for_user_id
@@ -70,27 +75,49 @@ def build_message_response(message: Message, session: Session, encrypt_for_user_
                 "ephemeral_public_key": enc_file.ephemeral_key_sender if is_sender else enc_file.ephemeral_key_recipient,
             }
 
-    # E2E encrypted message - return correct version for each user
-    if message.encryption_version > 0:
-        if encrypt_for_user_id == message.sender_id:
-            # Sender gets their own encrypted version
-            if message.encrypted_for_sender:
-                response["encrypted_content"] = message.encrypted_for_sender
-                response["ephemeral_public_key"] = message.ephemeral_key_for_sender
-                response["encryption_version"] = message.encryption_version
-        else:
-            # Recipient gets their encrypted version
-            if message.encrypted_content:
-                response["encrypted_content"] = message.encrypted_content
-                response["ephemeral_public_key"] = message.ephemeral_public_key
-                response["encryption_version"] = message.encryption_version
+    # Get plaintext content based on encryption version
+    plaintext = None
+
+    if message.encryption_version == 2:
+        # New AES storage - decrypt from storage
+        if message.content:
+            try:
+                plaintext = encryption_service.decrypt_from_storage(message.content)
+            except Exception as e:
+                print(f"[Messages] Failed to decrypt AES storage: {e}")
+                response["content"] = "[Decryption error]"
+                return response
+    elif message.encryption_version == 1:
+        # Old E2E format - these messages can't be decrypted anymore
+        # They were encrypted with recipient's key which may have changed
+        response["content"] = "[Old encrypted message]"
+        return response
+    else:
+        # Plaintext (v0)
+        plaintext = message.content
+
+    if not plaintext:
         return response
 
-    # Fallback: server-side encryption for plaintext messages
-    if encrypt_for_user_id and not message.is_deleted and message.content:
+    # Encrypt for transport to recipient
+    if encrypt_for_user_id:
         public_key = get_user_public_key(encrypt_for_user_id, session)
         if public_key:
-            response = encryption_service.encrypt_message_response(response, public_key)
+            try:
+                encrypted = encryption_service.encrypt_for_user(plaintext, public_key)
+                response["encrypted_content"] = f"{encrypted['ciphertext']}:{encrypted['nonce']}"
+                response["ephemeral_public_key"] = encrypted["ephemeral_public_key"]
+                response["encryption_version"] = 1  # E2E transport version
+            except Exception as e:
+                print(f"[Messages] Failed to encrypt for transport: {e}")
+                # Fallback to plaintext (not ideal but better than nothing)
+                response["content"] = plaintext
+        else:
+            # No encryption key, send plaintext
+            response["content"] = plaintext
+    else:
+        # No target user, return plaintext
+        response["content"] = plaintext
 
     return response
 
@@ -168,8 +195,9 @@ async def send_message(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Send a message to chat (plaintext).
-    Server stores plaintext and encrypts when delivering to recipients.
+    Send a message to chat.
+    Client can send plaintext or E2E encrypted (encrypted with server's public key).
+    Server decrypts E2E, encrypts with AES, and stores.
     """
     chat = session.get(Chat, chat_id)
     if not chat:
@@ -196,25 +224,52 @@ async def send_message(
         if file_record:
             file_url = file_record.url
 
-    # Check if E2E encrypted
-    is_e2e = bool(data.encrypted_for_recipient and data.encrypted_for_sender)
+    # Determine message content
+    plaintext = None
+    encryption_version = 0
 
-    # Store message
+    # Check if client sent E2E encrypted message (encrypted with server's public key)
+    if data.encrypted_for_recipient and data.encrypted_for_recipient.encrypted_content:
+        # Client encrypted for server - decrypt it
+        try:
+            plaintext = encryption_service.decrypt_from_client(
+                data.encrypted_for_recipient.encrypted_content,
+                data.encrypted_for_recipient.ephemeral_public_key,
+                current_user.id
+            )
+            print(f"[Messages] Decrypted E2E message from client {current_user.id[:8]}")
+        except Exception as e:
+            print(f"[Messages] Failed to decrypt E2E from client: {e}")
+            # Fall back to plaintext if provided
+            plaintext = data.content
+    else:
+        # Plaintext message
+        plaintext = data.content
+
+    # Encrypt for storage with AES
+    aes_content = None
+    if plaintext:
+        try:
+            aes_content = encryption_service.encrypt_for_storage(plaintext)
+            encryption_version = 2  # AES storage
+            print(f"[Messages] Stored message with AES encryption")
+        except Exception as e:
+            print(f"[Messages] Failed to encrypt for storage: {e}")
+            # Store as plaintext as fallback
+            aes_content = plaintext
+            encryption_version = 0
+
+    # Create message
     message = Message(
         chat_id=chat_id,
         sender_id=current_user.id,
-        content=data.content if not is_e2e else None,  # No plaintext if E2E
+        content=aes_content,  # AES encrypted or plaintext
         message_type=data.message_type,
         file_id=data.file_id,
-        encrypted_file_id=data.encrypted_file_id,  # E2E encrypted file
+        encrypted_file_id=data.encrypted_file_id,
         file_url=file_url,
         reply_to_id=data.reply_to_id,
-        # E2E encryption
-        encryption_version=1 if is_e2e else 0,
-        encrypted_content=data.encrypted_for_recipient.encrypted_content if is_e2e else None,
-        ephemeral_public_key=data.encrypted_for_recipient.ephemeral_public_key if is_e2e else None,
-        encrypted_for_sender=data.encrypted_for_sender.encrypted_content if is_e2e else None,
-        ephemeral_key_for_sender=data.encrypted_for_sender.ephemeral_public_key if is_e2e else None,
+        encryption_version=encryption_version,
     )
     session.add(message)
 
@@ -237,7 +292,7 @@ async def send_message(
         member_user_id = chat_member.user_id
         encrypted_response = build_message_response(message, session, encrypt_for_user_id=member_user_id)
 
-        print(f"[WS] Sending to user {member_user_id}, encrypted: {encrypted_response.get('encryption_version', 0) > 0}")
+        print(f"[WS] Sending to user {member_user_id[:8]}, encrypted: {bool(encrypted_response.get('encrypted_content'))}")
         await connection_manager.send_to_user(
             member_user_id,
             {
@@ -274,7 +329,16 @@ async def edit_message(
     if message.is_deleted:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot edit deleted message")
 
-    message.content = data.content
+    # Encrypt new content with AES
+    try:
+        aes_content = encryption_service.encrypt_for_storage(data.content)
+        message.content = aes_content
+        message.encryption_version = 2
+    except Exception as e:
+        print(f"[Messages] Failed to encrypt edit: {e}")
+        message.content = data.content
+        message.encryption_version = 0
+
     message.is_edited = True
     session.add(message)
     session.commit()
@@ -389,7 +453,11 @@ def search_messages(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
 ):
-    """Search for messages across all chats or within a specific chat."""
+    """
+    Search for messages across all chats or within a specific chat.
+    Note: Search works on plaintext messages only (v0).
+    Encrypted messages (v2) cannot be searched server-side.
+    """
     # Get user's chat IDs
     member_query = select(ChatMember.chat_id).where(ChatMember.user_id == current_user.id)
     user_chat_ids = session.exec(member_query).all()
@@ -397,9 +465,11 @@ def search_messages(
     if not user_chat_ids:
         return MessageListResponse(messages=[], has_more=False)
 
+    # Only search plaintext messages (encryption_version = 0)
     query = select(Message).where(
         Message.chat_id.in_(user_chat_ids),
         Message.is_deleted == False,
+        Message.encryption_version == 0,  # Only plaintext
         Message.content.ilike(f"%{q}%")
     )
 

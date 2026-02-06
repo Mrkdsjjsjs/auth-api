@@ -109,3 +109,14 @@ class EncryptedMessageResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# Server key exchange for E2E transport
+class ServerKeyExchangeRequest(BaseModel):
+    """Request server's public key for E2E transport"""
+    client_public_key: str  # Base64 client's X25519 public key
+
+
+class ServerKeyExchangeResponse(BaseModel):
+    """Server's public key for E2E transport"""
+    server_public_key: str  # Base64 server's X25519 public key for this client

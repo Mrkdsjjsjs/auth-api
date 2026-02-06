@@ -17,7 +17,10 @@ from app.schemas.encryption import (
     ChatKeysResponse,
     ChatKeyCreate,
     ChatKeyRotate,
+    ServerKeyExchangeRequest,
+    ServerKeyExchangeResponse,
 )
+from app.services.encryption_service import encryption_service
 from app.auth import get_current_user
 
 router = APIRouter(prefix="/api/keys", tags=["encryption"])
@@ -395,3 +398,26 @@ def rotate_chat_key(
     Call when a member leaves or for periodic rotation.
     """
     return set_chat_keys(chat_id, data, session, current_user)
+
+
+@router.post("/exchange", response_model=ServerKeyExchangeResponse,
+    summary="Exchange keys with server for E2E transport",
+    responses={
+        200: {"description": "Server public key returned"},
+    })
+def exchange_keys(
+    data: ServerKeyExchangeRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    **Exchange keys with server for E2E transport**
+
+    Client sends their public key, server returns its public key for this client.
+    Server generates a unique key pair per client for E2E transport encryption.
+
+    - **client_public_key**: Base64 X25519 public key from client
+    """
+    # Get or create server's key pair for this client
+    server_public_key = encryption_service.get_server_public_key_for_client(current_user.id)
+
+    return ServerKeyExchangeResponse(server_public_key=server_public_key)

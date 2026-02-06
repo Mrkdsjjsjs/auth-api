@@ -24,3 +24,7 @@ MAX_VOICE_SIZE = 5 * 1024 * 1024   # 5MB
 
 # CORS
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
+
+# AES key for server-side storage encryption (32 bytes, base64)
+# E2E keys are generated dynamically per client connection
+AES_STORAGE_KEY = os.getenv("AES_STORAGE_KEY", "")
