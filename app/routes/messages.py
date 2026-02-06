@@ -19,8 +19,6 @@ from app.services.redis_service import redis_service
 
 router = APIRouter(tags=["messages"])
 
-MESSAGES_CACHE_TTL = 30  # 30 seconds for messages
-
 
 def get_user_public_key(user_id: str, session: Session) -> Optional[str]:
     """Get user's active public key for encryption"""
