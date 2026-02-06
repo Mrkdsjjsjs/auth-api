@@ -234,6 +234,19 @@ export const useCallStore = create<CallState>((set, get) => ({
       setTimeout(() => get().reset(), 2000)
     }, true)
 
+    // Call accepted on another device (same user, multiple devices)
+    wsService.on('call_accepted_on_other_device', (data) => {
+      console.log('[Call] Call accepted on another device:', data)
+      const currentStatus = get().status
+
+      // Only handle if we're in incoming state (ringing)
+      if (currentStatus === 'incoming') {
+        callSoundService.stopRingtone()
+        set({ status: 'idle', error: 'Answered on another device' })
+        setTimeout(() => get().reset(), 2000)
+      }
+    }, true)
+
     // Call ended
     wsService.on('call_ended', (data) => {
       console.log('[Call] Call ended:', data)

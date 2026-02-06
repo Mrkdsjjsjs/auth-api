@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useCallStore } from '../store/callStore'
-import { PhoneOff, Mic, MicOff, Monitor, MonitorOff } from 'lucide-react'
+import { PhoneOff, Mic, MicOff, Monitor, MonitorOff, Maximize, Minimize } from 'lucide-react'
 import webrtcService from '../services/webrtc'
 
 // Emoji avatars based on user id hash
@@ -52,6 +52,8 @@ export default function CallModal({ remoteUserName, remoteUserAvatar, remoteUser
   // Store streams in state so we can set them when video elements mount
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
   const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const videoContainerRef = useRef<HTMLDivElement>(null)
 
   const displayName = remoteUserName || storeRemoteUserName || 'Unknown'
   const avatarUrl = remoteUserAvatar || storeRemoteUserAvatar
@@ -122,6 +124,46 @@ export default function CallModal({ remoteUserName, remoteUserAvatar, remoteUser
     }
   }, [isScreenSharing, localScreenStream])
 
+  // Listen for fullscreen changes
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange)
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
+    }
+  }, [])
+
+  // Toggle fullscreen for video
+  const toggleFullscreen = useCallback(async () => {
+    try {
+      if (!document.fullscreenElement) {
+        // Try to fullscreen the video container or main video
+        const element = videoContainerRef.current || remoteVideoRef.current
+        if (element) {
+          if (element.requestFullscreen) {
+            await element.requestFullscreen()
+          } else if ((element as any).webkitRequestFullscreen) {
+            await (element as any).webkitRequestFullscreen()
+          }
+        }
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen()
+        } else if ((document as any).webkitExitFullscreen) {
+          await (document as any).webkitExitFullscreen()
+        }
+      }
+    } catch (e) {
+      console.log('[CallModal] Fullscreen error:', e)
+    }
+  }, [])
+
   // Don't render for idle or incoming (incoming has its own notification)
   if (status === 'idle' || status === 'incoming') {
     return null
@@ -163,7 +205,7 @@ export default function CallModal({ remoteUserName, remoteUserAvatar, remoteUser
     <div className={`call-fullscreen ${hasVideo ? 'has-video' : ''}`}>
       {/* Video area */}
       {hasVideo && (
-        <div className="call-video-container">
+        <div className="call-video-container" ref={videoContainerRef}>
           {/* Remote screen share */}
           {isRemoteScreenSharing && (
             <video
@@ -171,6 +213,7 @@ export default function CallModal({ remoteUserName, remoteUserAvatar, remoteUser
               autoPlay
               playsInline
               className="call-video-main"
+              onClick={toggleFullscreen}
             />
           )}
 
@@ -182,8 +225,18 @@ export default function CallModal({ remoteUserName, remoteUserAvatar, remoteUser
               playsInline
               muted
               className={isRemoteScreenSharing ? 'call-video-pip' : 'call-video-main'}
+              onClick={!isRemoteScreenSharing ? toggleFullscreen : undefined}
             />
           )}
+
+          {/* Fullscreen toggle button */}
+          <button
+            className="call-fullscreen-btn"
+            onClick={toggleFullscreen}
+            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+          >
+            {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
+          </button>
         </div>
       )}
 

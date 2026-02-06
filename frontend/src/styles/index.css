@@ -1169,6 +1169,174 @@ body {
   background: #dc2626;
 }
 
+/* Fullscreen button */
+.call-fullscreen-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  z-index: 10;
+  backdrop-filter: blur(10px);
+}
+
+.call-fullscreen-btn:hover {
+  background: rgba(0, 0, 0, 0.8);
+  transform: scale(1.1);
+}
+
+/* Video element click hint */
+.call-video-main {
+  cursor: pointer;
+}
+
+/* Fullscreen mode styles */
+.call-video-container:fullscreen,
+.call-video-container:-webkit-full-screen {
+  background: #000;
+}
+
+.call-video-container:fullscreen .call-video-main,
+.call-video-container:-webkit-full-screen .call-video-main {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.call-video-container:fullscreen .call-fullscreen-btn,
+.call-video-container:-webkit-full-screen .call-fullscreen-btn {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+}
+
+.call-video-container:fullscreen .call-video-pip,
+.call-video-container:-webkit-full-screen .call-video-pip {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+}
+
+/* Landscape mode for call interface */
+@media (max-height: 500px) and (orientation: landscape) {
+  .call-fullscreen {
+    flex-direction: row;
+  }
+
+  .call-video-container {
+    flex: 1;
+    height: 100%;
+  }
+
+  .call-info-overlay {
+    bottom: 60px;
+  }
+
+  .call-info-overlay.compact {
+    top: 10px;
+    left: 10px;
+    padding: 8px 16px;
+  }
+
+  .call-info-overlay.compact .call-user-name-large {
+    font-size: 14px;
+  }
+
+  .call-avatar-large {
+    width: 80px;
+    height: 80px;
+    margin-bottom: 12px;
+  }
+
+  .call-avatar-emoji {
+    font-size: 36px;
+  }
+
+  .call-user-name-large {
+    font-size: 20px;
+  }
+
+  .call-status-text {
+    font-size: 14px;
+  }
+
+  .call-controls-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 10px 20px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+    padding-left: max(20px, env(safe-area-inset-left));
+    padding-right: max(20px, env(safe-area-inset-right));
+    gap: 16px;
+  }
+
+  .call-control-btn {
+    padding: 10px 16px;
+    min-width: 70px;
+  }
+
+  .call-control-btn span {
+    font-size: 11px;
+  }
+
+  .call-video-pip {
+    width: 120px;
+    height: 90px;
+    bottom: 70px;
+    right: 10px;
+  }
+
+  .call-fullscreen-btn {
+    top: 10px;
+    right: 10px;
+    width: 36px;
+    height: 36px;
+  }
+}
+
+/* Mobile portrait call adjustments */
+@media (max-width: 480px) {
+  .call-controls-bar {
+    gap: 16px;
+    padding: 16px;
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+
+  .call-control-btn {
+    padding: 10px 14px;
+    min-width: 65px;
+  }
+
+  .call-avatar-large {
+    width: 120px;
+    height: 120px;
+  }
+
+  .call-avatar-emoji {
+    font-size: 48px;
+  }
+
+  .call-user-name-large {
+    font-size: 24px;
+  }
+
+  .call-fullscreen-btn {
+    width: 40px;
+    height: 40px;
+  }
+}
+
 /* Incoming Call Notification */
 .incoming-call-overlay {
   position: fixed;

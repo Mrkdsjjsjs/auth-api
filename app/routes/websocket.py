@@ -232,6 +232,12 @@ async def handle_websocket_message(message: dict, user_id: str, session: Session
                 "call_id": call_id
             })
 
+            # Notify other devices of callee to stop ringing
+            await connection_manager.send_to_user(user_id, {
+                "type": "call_accepted_on_other_device",
+                "call_id": call_id
+            })
+
     elif event_type == "call_reject":
         call_id = message.get("call_id")
         reason = message.get("reason", "rejected")
