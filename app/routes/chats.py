@@ -11,6 +11,7 @@ from app.schemas.chat import (
 )
 from app.schemas.user import UserPublicResponse
 from app.auth import get_current_user
+from app.services.encryption_service import encryption_service
 
 router = APIRouter(prefix="/api/chats", tags=["chats"])
 
@@ -62,9 +63,21 @@ def get_chat_response(chat: Chat, session: Session, current_user_id: str) -> Cha
         .limit(1)
     ).first()
     if last_msg:
+        # Decrypt content for preview
+        content = None
+        if last_msg.encryption_version == 2 and last_msg.content:
+            try:
+                content = encryption_service.decrypt_from_storage(last_msg.content)
+            except Exception:
+                content = "[Encrypted]"
+        elif last_msg.encryption_version == 0:
+            content = last_msg.content
+        else:
+            content = "[Encrypted]"
+
         last_message = LastMessageResponse(
             id=last_msg.id,
-            content=last_msg.content,
+            content=content,
             sender_id=last_msg.sender_id,
             created_at=last_msg.created_at
         )
