@@ -678,6 +678,70 @@ body {
   background: rgba(0, 0, 0, 0.3);
 }
 
+/* Media messages (images/videos) */
+.media-message {
+  position: relative;
+  max-width: 300px;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.media-message.loading {
+  background: rgba(0, 0, 0, 0.2);
+  padding: 40px;
+  text-align: center;
+}
+
+.media-loading {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.media-preview {
+  display: block;
+  width: 100%;
+  max-height: 400px;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.media-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: white;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.media-message:hover .media-overlay {
+  opacity: 1;
+}
+
+.media-overlay span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .media-message {
+    max-width: 250px;
+  }
+
+  .media-preview {
+    max-height: 300px;
+  }
+}
+
 .file-message span {
   flex: 1;
   overflow: hidden;

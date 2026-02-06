@@ -15,8 +15,11 @@ from app.schemas.user import UserPublicResponse
 from app.auth import get_current_user
 from app.services.websocket import connection_manager
 from app.services.encryption_service import encryption_service
+from app.services.redis_service import redis_service
 
 router = APIRouter(tags=["messages"])
+
+MESSAGES_CACHE_TTL = 30  # 30 seconds for messages
 
 
 def get_user_public_key(user_id: str, session: Session) -> Optional[str]:
@@ -230,6 +233,10 @@ async def send_message(
     members = session.exec(
         select(ChatMember).where(ChatMember.chat_id == chat_id)
     ).all()
+
+    # Invalidate cache for all chat members
+    member_ids = [m.user_id for m in members]
+    await redis_service.invalidate_chat_for_members(member_ids)
 
     print(f"[WS] Broadcasting message {message.id} to {len(members)} members")
 

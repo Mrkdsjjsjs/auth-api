@@ -1,6 +1,6 @@
 import redis.asyncio as redis
 import json
-from typing import Optional, Any
+from typing import Optional, Any, List
 from app.config import REDIS_URL
 
 
@@ -30,6 +30,16 @@ class RedisService:
             return None
         return await self.redis.get(key)
 
+    async def get_json(self, key: str) -> Optional[Any]:
+        """Get JSON value from cache"""
+        data = await self.get(key)
+        if data:
+            try:
+                return json.loads(data)
+            except json.JSONDecodeError:
+                return None
+        return None
+
     async def set(self, key: str, value: Any, expire: int = 300):
         """Set value in cache with expiration (default 5 min)"""
         if not self.redis:
@@ -43,6 +53,41 @@ class RedisService:
         if not self.redis:
             return
         await self.redis.delete(key)
+
+    async def delete_pattern(self, pattern: str):
+        """Delete all keys matching pattern"""
+        if not self.redis:
+            return
+        keys = await self.redis.keys(pattern)
+        if keys:
+            await self.redis.delete(*keys)
+
+    # Cache keys
+    @staticmethod
+    def user_chats_key(user_id: str) -> str:
+        return f"cache:user:{user_id}:chats"
+
+    @staticmethod
+    def chat_messages_key(chat_id: str) -> str:
+        return f"cache:chat:{chat_id}:messages"
+
+    @staticmethod
+    def user_profile_key(user_id: str) -> str:
+        return f"cache:user:{user_id}:profile"
+
+    # Invalidation helpers
+    async def invalidate_user_chats(self, user_id: str):
+        """Invalidate user's chat list cache"""
+        await self.delete(self.user_chats_key(user_id))
+
+    async def invalidate_chat_messages(self, chat_id: str):
+        """Invalidate chat messages cache"""
+        await self.delete_pattern(f"cache:chat:{chat_id}:messages*")
+
+    async def invalidate_chat_for_members(self, member_ids: List[str]):
+        """Invalidate chat cache for all members"""
+        for user_id in member_ids:
+            await self.invalidate_user_chats(user_id)
 
     # Pub/Sub operations
     async def publish(self, channel: str, message: dict):

@@ -56,6 +56,8 @@ export default function ChatPage() {
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [shouldScrollToBottom, setShouldScrollToBottom] = useState(true)
+  const [decryptedMediaUrls, setDecryptedMediaUrls] = useState<Record<string, string>>({})
+  const [loadingMedia, setLoadingMedia] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     loadUser()
@@ -75,8 +77,20 @@ export default function ChatPage() {
   // Reset scroll position when changing chats
   useEffect(() => {
     setShouldScrollToBottom(true)
-    messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
+    // Clear decrypted media for old chat
+    setDecryptedMediaUrls({})
+    setLoadingMedia({})
   }, [currentChatId])
+
+  // Scroll to bottom when messages load for the first time or chat changes
+  useEffect(() => {
+    if (messages.length > 0 && shouldScrollToBottom) {
+      // Use setTimeout to ensure DOM is updated
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
+      }, 100)
+    }
+  }, [currentChatId, messages.length > 0])
 
   // Handle scroll for infinite scroll
   const handleScroll = () => {
@@ -230,6 +244,59 @@ export default function ChatPage() {
     }
   }
 
+  const decryptFileForDisplay = async (fileId: string): Promise<string | null> => {
+    // Check if already decrypted
+    if (decryptedMediaUrls[fileId]) {
+      return decryptedMediaUrls[fileId]
+    }
+
+    // Check if already loading
+    if (loadingMedia[fileId]) {
+      return null
+    }
+
+    setLoadingMedia(prev => ({ ...prev, [fileId]: true }))
+
+    try {
+      const { data: fileInfo } = await encryptedFilesApi.getInfo(fileId)
+      const { data: encryptedData } = await encryptedFilesApi.download(fileId)
+
+      const encryptionStore = useEncryptionStore.getState()
+      if (!encryptionStore.identityKeyPair) {
+        throw new Error('Encryption not initialized')
+      }
+
+      const encryptedFile = new Uint8Array(encryptedData)
+      const fileNonce = base64ToUint8Array(fileInfo.file_nonce)
+      const encryptedKey = base64ToUint8Array(fileInfo.encrypted_key)
+      const keyNonce = base64ToUint8Array(fileInfo.key_nonce)
+      const ephemeralPublicKey = base64ToUint8Array(fileInfo.ephemeral_public_key)
+
+      const decryptedFile = cryptoService.decryptFile(
+        encryptedFile,
+        fileNonce,
+        encryptedKey,
+        keyNonce,
+        ephemeralPublicKey,
+        encryptionStore.identityKeyPair.secretKey
+      )
+
+      const arrayBuffer = new ArrayBuffer(decryptedFile.byteLength)
+      new Uint8Array(arrayBuffer).set(decryptedFile)
+      const blob = new Blob([arrayBuffer], { type: fileInfo.content_type })
+      const url = URL.createObjectURL(blob)
+
+      setDecryptedMediaUrls(prev => ({ ...prev, [fileId]: url }))
+      setLoadingMedia(prev => ({ ...prev, [fileId]: false }))
+
+      return url
+    } catch (error) {
+      console.error('Failed to decrypt file for display:', error)
+      setLoadingMedia(prev => ({ ...prev, [fileId]: false }))
+      return null
+    }
+  }
+
   const handleDownloadFile = async (fileId: string, filename: string) => {
     try {
       // Get file info (includes decryption keys for current user)
@@ -281,10 +348,52 @@ export default function ChatPage() {
   const renderFileMessage = (msg: typeof messages[0]) => {
     // If we have encrypted_file info, show it with download option
     if (msg.encrypted_file) {
-      const { file_type, original_filename, id } = msg.encrypted_file
+      const { file_type, original_filename, id, content_type } = msg.encrypted_file
       const isImage = file_type === 'image'
+      const isVideo = content_type?.startsWith('video/')
       const isAudio = file_type === 'voice'
 
+      // For images and videos, show inline preview
+      if (isImage || isVideo) {
+        const mediaUrl = decryptedMediaUrls[id]
+        const isLoading = loadingMedia[id]
+
+        // Auto-decrypt for display
+        if (!mediaUrl && !isLoading) {
+          decryptFileForDisplay(id)
+        }
+
+        if (isLoading) {
+          return (
+            <div className="media-message loading">
+              <div className="media-loading">Decrypting...</div>
+            </div>
+          )
+        }
+
+        if (mediaUrl) {
+          return (
+            <div className="media-message" onClick={() => handleDownloadFile(id, original_filename)}>
+              {isVideo ? (
+                <video
+                  src={mediaUrl}
+                  controls
+                  className="media-preview"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ) : (
+                <img src={mediaUrl} alt={original_filename} className="media-preview" />
+              )}
+              <div className="media-overlay">
+                <Download size={16} />
+                <span>{original_filename}</span>
+              </div>
+            </div>
+          )
+        }
+      }
+
+      // Regular file message
       return (
         <div
           className="file-message"

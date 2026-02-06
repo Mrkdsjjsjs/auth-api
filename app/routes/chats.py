@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlmodel import Session, select
 from datetime import datetime
 from app.database import get_session
@@ -11,8 +11,11 @@ from app.schemas.chat import (
 )
 from app.schemas.user import UserPublicResponse
 from app.auth import get_current_user
+from app.services.redis_service import redis_service
 
 router = APIRouter(prefix="/api/chats", tags=["chats"])
+
+CHAT_LIST_CACHE_TTL = 60  # 1 minute
 
 
 def get_chat_response(chat: Chat, session: Session, current_user_id: str) -> ChatResponse:
@@ -88,7 +91,7 @@ def get_chat_response(chat: Chat, session: Session, current_user_id: str) -> Cha
     responses={
         200: {"description": "Chats list returned"},
     })
-def list_chats(
+async def list_chats(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
 ):
@@ -96,7 +99,15 @@ def list_chats(
     **Get all chats for current user**
 
     Returns all chats the user is a member of, sorted by last message.
+    Uses Redis cache for faster response.
     """
+    cache_key = redis_service.user_chats_key(current_user.id)
+
+    # Try cache first
+    cached = await redis_service.get_json(cache_key)
+    if cached:
+        return ChatListResponse(chats=cached, total=len(cached))
+
     # Get chat IDs user is member of
     member_query = select(ChatMember.chat_id).where(ChatMember.user_id == current_user.id)
     chat_ids = session.exec(member_query).all()
@@ -110,6 +121,10 @@ def list_chats(
 
     chat_responses = [get_chat_response(chat, session, current_user.id) for chat in chats]
 
+    # Cache the result
+    cache_data = [c.model_dump(mode='json') for c in chat_responses]
+    await redis_service.set(cache_key, cache_data, CHAT_LIST_CACHE_TTL)
+
     return ChatListResponse(chats=chat_responses, total=len(chat_responses))
 
 
@@ -119,7 +134,7 @@ def list_chats(
         201: {"description": "Chat created"},
         400: {"description": "Invalid chat data"},
     })
-def create_chat(
+async def create_chat(
     data: ChatCreate,
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
@@ -186,6 +201,10 @@ def create_chat(
             session.add(member)
 
     session.commit()
+
+    # Invalidate cache for all members
+    all_member_ids = [current_user.id] + [uid for uid in data.member_ids if uid != current_user.id]
+    await redis_service.invalidate_chat_for_members(all_member_ids)
 
     return get_chat_response(chat, session, current_user.id)
 
