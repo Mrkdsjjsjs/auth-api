@@ -154,4 +154,9 @@ export const encryptedFilesApi = {
     api.get(`/api/encrypted-files/${fileId}/download`, { responseType: 'arraybuffer' }),
 }
 
+// Calls - WebRTC ICE servers
+export const callsApi = {
+  getIceServers: () => api.get('/api/ice-servers'),
+}
+
 export default api

@@ -7,6 +7,7 @@ from app.routes.files import router as files_router
 from app.routes.websocket import router as websocket_router
 from app.routes.keys import router as keys_router
 from app.routes.encrypted_files import router as encrypted_files_router
+from app.routes.calls import router as calls_router
 
 api_router = APIRouter()
 
@@ -18,3 +19,4 @@ api_router.include_router(files_router)
 api_router.include_router(websocket_router)
 api_router.include_router(keys_router)
 api_router.include_router(encrypted_files_router)
+api_router.include_router(calls_router)

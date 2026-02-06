@@ -3,12 +3,15 @@ import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import { useChatStore } from '../store/chatStore'
 import { useEncryptionStore } from '../store/encryptionStore'
+import { useCallStore } from '../store/callStore'
 import { usersApi, encryptedFilesApi } from '../services/api'
 import { cryptoService, base64ToUint8Array } from '../services/crypto'
 import wsService from '../services/websocket'
 import { notificationService } from '../services/notification'
 import { format } from 'date-fns'
-import { Send, Plus, LogOut, Search, MessageCircle, X, User, Lock, Unlock, ArrowLeft, Paperclip, FileIcon, Image, Music, Download, AtSign } from 'lucide-react'
+import { Send, Plus, LogOut, Search, MessageCircle, X, User, Lock, Unlock, ArrowLeft, Paperclip, FileIcon, Image, Music, Download, AtSign, Phone } from 'lucide-react'
+import CallModal from '../components/CallModal'
+import IncomingCallNotification from '../components/IncomingCallNotification'
 
 // Emoji avatars based on user id hash
 const AVATAR_EMOJIS = ['🦊', '🐼', '🦁', '🐯', '🐻', '🐨', '🐸', '🐵', '🦄', '🐲', '🦋', '🌸', '🌺', '🌻', '🍀', '⭐', '🌙', '🔥', '💎', '🎯', '🎨', '🎭', '🎪', '🎬', '🎤', '🎸', '🎹', '🎺', '🥁', '🎮']
@@ -59,10 +62,14 @@ export default function ChatPage() {
   const [decryptedMediaUrls, setDecryptedMediaUrls] = useState<Record<string, string>>({})
   const [loadingMedia, setLoadingMedia] = useState<Record<string, boolean>>({})
 
+  // Call store
+  const { status: callStatus, initiateCall, setupCallHandlers } = useCallStore()
+
   useEffect(() => {
     loadUser()
     loadChats()
     setupWebSocket()
+    setupCallHandlers()
     // Request notification permission
     notificationService.requestPermission()
   }, [])
@@ -553,11 +560,23 @@ export default function ChatPage() {
                   {getOtherUser(currentChat)?.is_online ? 'online' : 'offline'}
                 </div>
               </div>
+              <button
+                className="call-header-btn"
+                onClick={() => {
+                  const otherUser = getOtherUser(currentChat)
+                  if (otherUser && currentChat) {
+                    initiateCall(currentChat.id, otherUser.id)
+                  }
+                }}
+                disabled={callStatus !== 'idle'}
+                title="Start call"
+              >
+                <Phone size={18} />
+              </button>
               <div
                 className="encryption-indicator"
                 title={encryptionInitialized && hasKeys ? 'E2E Encryption Active' : 'Encryption Not Active'}
                 style={{
-                  marginLeft: 'auto',
                   color: encryptionInitialized && hasKeys ? '#22c55e' : 'var(--text-secondary)',
                 }}
               >
@@ -749,6 +768,10 @@ export default function ChatPage() {
           </div>
         </div>
       )}
+
+      {/* Call Components */}
+      <CallModal remoteUserName={getOtherUser(currentChat)?.display_name || getOtherUser(currentChat)?.username} />
+      <IncomingCallNotification />
     </div>
   )
 }

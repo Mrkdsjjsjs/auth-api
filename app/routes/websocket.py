@@ -1,9 +1,11 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
-from sqlmodel import Session
+from sqlmodel import Session, select
 from app.database import get_session
 from app.models.user import User
+from app.models.chat import ChatMember
 from app.auth import decode_token
 from app.services.websocket import connection_manager
+from app.services.call_service import call_service
 from datetime import datetime
 import json
 
@@ -159,3 +161,190 @@ async def handle_websocket_message(message: dict, user_id: str, session: Session
                     },
                     exclude_user=user_id
                 )
+
+    # ============== CALL EVENTS ==============
+
+    elif event_type == "call_initiate":
+        chat_id = message.get("chat_id")
+        callee_id = message.get("callee_id")
+
+        if not chat_id or not callee_id:
+            return
+
+        # Verify user is member of the chat
+        member = session.exec(
+            select(ChatMember).where(
+                ChatMember.chat_id == chat_id,
+                ChatMember.user_id == user_id
+            )
+        ).first()
+
+        if not member:
+            await connection_manager.send_to_user(user_id, {
+                "type": "call_error",
+                "error": "Not a member of this chat"
+            })
+            return
+
+        # Get caller name
+        caller = session.get(User, user_id)
+        caller_name = caller.display_name or caller.username or "Unknown"
+
+        try:
+            call = call_service.create_call(
+                chat_id=chat_id,
+                caller_id=user_id,
+                callee_id=callee_id,
+                caller_name=caller_name
+            )
+
+            # Notify callee about incoming call
+            await connection_manager.send_to_user(callee_id, {
+                "type": "call_incoming",
+                "call_id": call.id,
+                "caller_id": user_id,
+                "caller_name": caller_name,
+                "chat_id": chat_id
+            })
+
+            # Confirm to caller
+            await connection_manager.send_to_user(user_id, {
+                "type": "call_initiated",
+                "call_id": call.id,
+                "callee_id": callee_id
+            })
+
+        except ValueError as e:
+            await connection_manager.send_to_user(user_id, {
+                "type": "call_error",
+                "error": str(e)
+            })
+
+    elif event_type == "call_accept":
+        call_id = message.get("call_id")
+        if not call_id:
+            return
+
+        call = call_service.accept_call(call_id)
+        if call:
+            # Notify caller that call was accepted
+            await connection_manager.send_to_user(call.caller_id, {
+                "type": "call_accepted",
+                "call_id": call_id
+            })
+
+    elif event_type == "call_reject":
+        call_id = message.get("call_id")
+        reason = message.get("reason", "rejected")
+        if not call_id:
+            return
+
+        call = call_service.get_call(call_id)
+        if call:
+            # Notify caller that call was rejected
+            await connection_manager.send_to_user(call.caller_id, {
+                "type": "call_rejected",
+                "call_id": call_id,
+                "reason": reason
+            })
+            # End the call
+            call_service.end_call(call_id)
+
+    elif event_type == "call_end":
+        call_id = message.get("call_id")
+        if not call_id:
+            return
+
+        call = call_service.get_call(call_id)
+        if call:
+            other_user = call.callee_id if call.caller_id == user_id else call.caller_id
+            # Notify the other user
+            await connection_manager.send_to_user(other_user, {
+                "type": "call_ended",
+                "call_id": call_id,
+                "ended_by": user_id
+            })
+            # End the call
+            call_service.end_call(call_id)
+
+    # ============== WebRTC SIGNALING ==============
+
+    elif event_type == "call_offer":
+        call_id = message.get("call_id")
+        sdp = message.get("sdp")
+        if not call_id or not sdp:
+            return
+
+        call = call_service.get_call(call_id)
+        if call:
+            # Forward offer to callee
+            await connection_manager.send_to_user(call.callee_id, {
+                "type": "call_offer",
+                "call_id": call_id,
+                "sdp": sdp
+            })
+
+    elif event_type == "call_answer":
+        call_id = message.get("call_id")
+        sdp = message.get("sdp")
+        if not call_id or not sdp:
+            return
+
+        call = call_service.get_call(call_id)
+        if call:
+            # Forward answer to caller
+            await connection_manager.send_to_user(call.caller_id, {
+                "type": "call_answer",
+                "call_id": call_id,
+                "sdp": sdp
+            })
+
+    elif event_type == "call_ice_candidate":
+        call_id = message.get("call_id")
+        candidate = message.get("candidate")
+        if not call_id:
+            return
+
+        call = call_service.get_call(call_id)
+        if call:
+            # Forward ICE candidate to the other user
+            other_user = call.callee_id if call.caller_id == user_id else call.caller_id
+            await connection_manager.send_to_user(other_user, {
+                "type": "call_ice_candidate",
+                "call_id": call_id,
+                "candidate": candidate
+            })
+
+    # ============== CALL STATE EVENTS ==============
+
+    elif event_type == "call_mute":
+        call_id = message.get("call_id")
+        is_muted = message.get("is_muted", False)
+        if not call_id:
+            return
+
+        call = call_service.get_call(call_id)
+        if call:
+            other_user = call.callee_id if call.caller_id == user_id else call.caller_id
+            await connection_manager.send_to_user(other_user, {
+                "type": "call_mute",
+                "call_id": call_id,
+                "user_id": user_id,
+                "is_muted": is_muted
+            })
+
+    elif event_type == "call_screen_share":
+        call_id = message.get("call_id")
+        is_sharing = message.get("is_sharing", False)
+        if not call_id:
+            return
+
+        call = call_service.get_call(call_id)
+        if call:
+            other_user = call.callee_id if call.caller_id == user_id else call.caller_id
+            await connection_manager.send_to_user(other_user, {
+                "type": "call_screen_share",
+                "call_id": call_id,
+                "user_id": user_id,
+                "is_sharing": is_sharing
+            })

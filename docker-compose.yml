@@ -47,6 +47,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=${SECRET_KEY:-super-secret-key-change-me}
       - AES_STORAGE_KEY=${AES_STORAGE_KEY}
+      - TURN_SHARED_SECRET=${TURN_SHARED_SECRET:-super-secret-turn-key-change-me}
       - CORS_ORIGINS=http://localhost:3000,http://localhost:5173,https://gayauth228gay.duckdns.org
     volumes:
       - ./app/static/uploads:/app/app/static/uploads
@@ -75,6 +76,21 @@ services:
       - backend
     restart: unless-stopped
 
+  # TURN Server for WebRTC
+  coturn:
+    image: coturn/coturn:latest
+    container_name: messenger-coturn
+    network_mode: host
+    volumes:
+      - ./turnserver.conf:/etc/turnserver.conf.template:ro
+      - coturn_logs:/var/log/turnserver
+    environment:
+      - TURN_SHARED_SECRET=${TURN_SHARED_SECRET:-super-secret-turn-key-change-me}
+    command: >
+      sh -c "sed 's/super-secret-turn-key-change-me/'\"$$TURN_SHARED_SECRET\"'/' /etc/turnserver.conf.template > /tmp/turnserver.conf && turnserver -c /tmp/turnserver.conf"
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:
+  coturn_logs:

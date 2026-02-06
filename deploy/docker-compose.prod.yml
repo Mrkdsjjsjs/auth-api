@@ -44,9 +44,11 @@ services:
       - DATABASE_URL=postgresql://messenger:${POSTGRES_PASSWORD:-messenger_secure_password}@postgres:5432/messenger
       - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_secure_password}@redis:6379/0
       - SECRET_KEY=${SECRET_KEY}
+      - TURN_SHARED_SECRET=${TURN_SHARED_SECRET}
       - CORS_ORIGINS=https://gayauth228gay.duckdns.org
     volumes:
       - uploads:/app/app/static/uploads
+      - encrypted_storage:/app/app/encrypted_storage
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -72,10 +74,26 @@ services:
     networks:
       - messenger
 
+  # TURN Server for WebRTC calls
+  coturn:
+    image: coturn/coturn:latest
+    container_name: messenger-coturn
+    network_mode: host
+    volumes:
+      - ../turnserver.conf:/etc/turnserver.conf.template:ro
+      - coturn_logs:/var/log/turnserver
+    environment:
+      - TURN_SHARED_SECRET=${TURN_SHARED_SECRET}
+    command: >
+      sh -c "sed 's/super-secret-turn-key-change-me/'\"$$TURN_SHARED_SECRET\"'/' /etc/turnserver.conf.template > /tmp/turnserver.conf && turnserver -c /tmp/turnserver.conf"
+    restart: always
+
 volumes:
   postgres_data:
   redis_data:
   uploads:
+  encrypted_storage:
+  coturn_logs:
 
 networks:
   messenger:
