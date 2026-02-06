@@ -297,23 +297,22 @@ export const useCallStore = create<CallState>((set, get) => ({
         return
       }
 
-      // Only the callee (non-initiator) should process offers initially
-      // But both sides can process offers during renegotiation
+      // Not in a call
       if (status === 'idle') {
         console.log('[Call] Not in a call, ignoring offer')
         return
       }
 
-      // Prevent concurrent processing (but allow sequential for renegotiation)
+      // Prevent concurrent processing
       if (processingOffer) {
-        console.log('[Call] Already processing offer, queuing')
+        console.log('[Call] Already processing offer, ignoring')
         return
       }
       processingOffer = true
 
-      // Wait for peer connection to be ready (max 5 seconds)
+      // Wait for peer connection to be ready (max 3 seconds)
       let attempts = 0
-      while (!webrtcService.isReady() && attempts < 50) {
+      while (!webrtcService.isReady() && attempts < 30) {
         await new Promise(resolve => setTimeout(resolve, 100))
         attempts++
       }
@@ -321,7 +320,6 @@ export const useCallStore = create<CallState>((set, get) => ({
       if (!webrtcService.isReady()) {
         console.error('[Call] Peer connection not ready')
         processingOffer = false
-        get().endCall()
         return
       }
 
@@ -333,16 +331,16 @@ export const useCallStore = create<CallState>((set, get) => ({
           sdp: answer,
         })
         console.log('[Call] Answer sent')
-        processingOffer = false  // Allow next offer (renegotiation)
-      } catch (error) {
+        processingOffer = false
+      } catch (error: any) {
         console.error('[Call] Failed to handle offer:', error)
         processingOffer = false
-        get().endCall()
+        // Don't end call on offer errors - might be duplicate or timing issue
       }
     }, true)
 
-    // WebRTC answer
-    let processingAnswer = false
+    // WebRTC answer - track if we've processed initial answer
+    let initialAnswerProcessed = false
     wsService.on('call_answer', async (data) => {
       console.log('[Call] Received answer')
 
@@ -359,21 +357,23 @@ export const useCallStore = create<CallState>((set, get) => ({
         return
       }
 
-      // Prevent concurrent processing
-      if (processingAnswer) {
-        console.log('[Call] Already processing answer, ignoring')
+      // Ignore duplicate initial answers
+      if (initialAnswerProcessed && webrtcService.getConnectionState() === 'connected') {
+        console.log('[Call] Already connected, ignoring duplicate answer')
         return
       }
-      processingAnswer = true
 
       try {
         await webrtcService.setRemoteDescription(data.sdp)
         console.log('[Call] Remote description set')
-        processingAnswer = false  // Allow next answer (renegotiation)
-      } catch (error) {
+        initialAnswerProcessed = true
+      } catch (error: any) {
+        // Ignore "wrong state: stable" errors - just means we already processed an answer
+        if (error?.message?.includes('stable')) {
+          console.log('[Call] Already in stable state, ignoring answer')
+          return
+        }
         console.error('[Call] Failed to handle answer:', error)
-        processingAnswer = false
-        get().endCall()
       }
     }, true)
 
