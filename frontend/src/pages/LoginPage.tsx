@@ -19,7 +19,7 @@ export default function LoginPage() {
   return (
     <div className="auth-container">
       <div className="auth-card">
-        <h1 className="auth-title">💬 Messenger</h1>
+        <h1 className="auth-title">🌑 Shadowlum</h1>
         <p className="auth-subtitle">Sign in to continue</p>
 
         {error && <div className="error-message">{error}</div>}

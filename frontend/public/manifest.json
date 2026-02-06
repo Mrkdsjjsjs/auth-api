@@ -1,6 +1,6 @@
 {
-  "name": "Messenger",
-  "short_name": "Messenger",
+  "name": "Shadowlum",
+  "short_name": "Shadowlum",
   "description": "Secure messenger with E2E encryption",
   "start_url": "/",
   "display": "standalone",

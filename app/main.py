@@ -53,7 +53,7 @@ async def lifespan(app: FastAPI):
 
 
 DESCRIPTION = """
-## 💬 Messenger API - Telegram-like Real-time Messenger
+## 🌑 Shadowlum API - Secure Real-time Messenger
 
 ### Features
 - **JWT Access & Refresh Tokens** - Secure token-based auth
@@ -98,7 +98,7 @@ TAGS_METADATA = [
 ]
 
 app = FastAPI(
-    title="💬 Messenger API",
+    title="🌑 Shadowlum API",
     description=DESCRIPTION,
     version="2.0.0",
     openapi_tags=TAGS_METADATA,
@@ -154,7 +154,7 @@ LANDING_HTML = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>💬 Messenger API</title>
+    <title>🌑 Shadowlum API</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -217,7 +217,7 @@ LANDING_HTML = """
 <body>
     <div class="container">
         <div class="logo">💬</div>
-        <h1>Messenger API</h1>
+        <h1>Shadowlum API</h1>
         <p class="subtitle">Real-time messaging with PostgreSQL, Redis & WebSocket</p>
         <div class="buttons">
             <a href="/docs" class="btn btn-primary">📚 API Docs</a>
@@ -260,7 +260,7 @@ def landing():
 def custom_swagger_ui():
     html = get_swagger_ui_html(
         openapi_url="/openapi.json",
-        title="💬 Messenger API",
+        title="🌑 Shadowlum API",
         swagger_ui_parameters={"persistAuthorization": True, "tryItOutEnabled": True},
     )
     return HTMLResponse(html.body.decode().replace("</head>", f"<style>{CUSTOM_CSS}</style></head>"))
@@ -268,7 +268,7 @@ def custom_swagger_ui():
 
 @app.get("/redoc", include_in_schema=False)
 def custom_redoc():
-    return get_redoc_html(openapi_url="/openapi.json", title="💬 Messenger API")
+    return get_redoc_html(openapi_url="/openapi.json", title="🌑 Shadowlum API")
 
 
 @app.get("/health", tags=["health"])

@@ -33,7 +33,7 @@ export default function RegisterPage() {
   return (
     <div className="auth-container">
       <div className="auth-card">
-        <h1 className="auth-title">💬 Messenger</h1>
+        <h1 className="auth-title">🌑 Shadowlum</h1>
         <p className="auth-subtitle">Create your account</p>
 
         {(error || localError) && (
