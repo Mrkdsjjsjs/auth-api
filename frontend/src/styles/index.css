@@ -1080,85 +1080,117 @@ body {
 }
 
 /* Incoming Call Notification */
-.incoming-call-notification {
+.incoming-call-overlay {
   position: fixed;
-  top: 20px;
-  right: 20px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 16px;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.85);
   display: flex;
   align-items: center;
-  gap: 16px;
-  z-index: 150;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  animation: slideIn 0.3s ease;
-  min-width: 300px;
+  justify-content: center;
+  z-index: 200;
+  animation: fadeIn 0.3s ease;
 }
 
-@keyframes slideIn {
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.incoming-call-notification {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 32px 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  box-shadow: 0 16px 64px rgba(0, 0, 0, 0.5);
+  animation: scaleIn 0.3s ease;
+  min-width: 320px;
+}
+
+@keyframes scaleIn {
   from {
-    transform: translateX(100%);
+    transform: scale(0.9);
     opacity: 0;
   }
   to {
-    transform: translateX(0);
+    transform: scale(1);
     opacity: 1;
   }
 }
 
 .incoming-call-content {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 12px;
-  flex: 1;
+  gap: 16px;
 }
 
 .incoming-call-avatar {
-  width: 48px;
-  height: 48px;
+  width: 100px;
+  height: 100px;
   border-radius: 50%;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: 48px;
   font-weight: 600;
   color: white;
-  animation: ring 1s ease infinite;
+  animation: pulse 2s ease infinite;
+  overflow: hidden;
 }
 
-@keyframes ring {
-  0%, 100% { transform: rotate(0deg); }
-  10%, 30% { transform: rotate(-10deg); }
-  20%, 40% { transform: rotate(10deg); }
-  50% { transform: rotate(0deg); }
+.incoming-call-avatar .avatar-emoji {
+  font-size: 48px;
+}
+
+.incoming-call-avatar .avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.7);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 20px rgba(102, 126, 234, 0);
+  }
 }
 
 .incoming-call-info {
-  flex: 1;
+  text-align: center;
 }
 
 .incoming-call-name {
   font-weight: 600;
-  font-size: 16px;
+  font-size: 24px;
   color: var(--text-primary);
 }
 
 .incoming-call-label {
-  font-size: 13px;
+  font-size: 15px;
   color: var(--text-secondary);
+  margin-bottom: 4px;
 }
 
 .incoming-call-buttons {
   display: flex;
-  gap: 8px;
+  gap: 32px;
 }
 
 .incoming-call-btn {
-  width: 44px;
-  height: 44px;
+  width: 64px;
+  height: 64px;
   border-radius: 50%;
   border: none;
   cursor: pointer;
@@ -1180,6 +1212,16 @@ body {
 
 .incoming-call-btn.accept {
   background: var(--success);
+  animation: greenPulse 1.5s ease infinite;
+}
+
+@keyframes greenPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 15px rgba(34, 197, 94, 0);
+  }
 }
 
 .incoming-call-btn.accept:hover {
@@ -1215,11 +1257,27 @@ body {
 /* Mobile adjustments */
 @media (max-width: 768px) {
   .incoming-call-notification {
-    top: auto;
-    bottom: 20px;
-    right: 16px;
-    left: 16px;
+    padding: 24px;
     min-width: auto;
+    margin: 16px;
+  }
+
+  .incoming-call-avatar {
+    width: 80px;
+    height: 80px;
+  }
+
+  .incoming-call-avatar .avatar-emoji {
+    font-size: 36px;
+  }
+
+  .incoming-call-name {
+    font-size: 20px;
+  }
+
+  .incoming-call-btn {
+    width: 56px;
+    height: 56px;
   }
 
   .call-modal {

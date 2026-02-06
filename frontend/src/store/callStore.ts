@@ -19,6 +19,7 @@ interface CallState {
   chatId: string | null
   remoteUserId: string | null
   remoteUserName: string | null
+  remoteUserAvatar: string | null
   isInitiator: boolean
   isMuted: boolean
   isRemoteMuted: boolean
@@ -46,6 +47,7 @@ export const useCallStore = create<CallState>((set, get) => ({
   chatId: null,
   remoteUserId: null,
   remoteUserName: null,
+  remoteUserAvatar: null,
   isInitiator: false,
   isMuted: false,
   isRemoteMuted: false,
@@ -188,6 +190,7 @@ export const useCallStore = create<CallState>((set, get) => ({
         chatId: data.chat_id,
         remoteUserId: data.caller_id,
         remoteUserName: data.caller_name,
+        remoteUserAvatar: data.caller_avatar || null,
         isInitiator: false,
       })
       callSoundService.startRingtone()
@@ -334,6 +337,7 @@ export const useCallStore = create<CallState>((set, get) => ({
       chatId: null,
       remoteUserId: null,
       remoteUserName: null,
+      remoteUserAvatar: null,
       isInitiator: false,
       isMuted: false,
       isRemoteMuted: false,

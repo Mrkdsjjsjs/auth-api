@@ -186,9 +186,10 @@ async def handle_websocket_message(message: dict, user_id: str, session: Session
             })
             return
 
-        # Get caller name
+        # Get caller info
         caller = session.get(User, user_id)
         caller_name = caller.display_name or caller.username or "Unknown"
+        caller_avatar = caller.avatar_url if caller else None
 
         try:
             call = call_service.create_call(
@@ -204,6 +205,7 @@ async def handle_websocket_message(message: dict, user_id: str, session: Session
                 "call_id": call.id,
                 "caller_id": user_id,
                 "caller_name": caller_name,
+                "caller_avatar": caller_avatar,
                 "chat_id": chat_id
             })
 
