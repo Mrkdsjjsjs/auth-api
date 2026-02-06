@@ -178,12 +178,28 @@ export const useCallStore = create<CallState>((set, get) => ({
     // Call initiated confirmation
     wsService.on('call_initiated', (data) => {
       console.log('[Call] Call initiated:', data)
+
+      // Only the tab that initiated the call should process this
+      const { status, isInitiator } = get()
+      if (!isInitiator || (status !== 'initiating' && status !== 'ringing')) {
+        console.log('[Call] Not the initiating tab, ignoring call_initiated')
+        return
+      }
+
       set({ callId: data.call_id })
     }, true)
 
     // Incoming call
     wsService.on('call_incoming', (data) => {
       console.log('[Call] Incoming call:', data)
+
+      // Don't show incoming call if we're already in a call
+      const { status } = get()
+      if (status !== 'idle') {
+        console.log('[Call] Already in a call, ignoring incoming')
+        return
+      }
+
       set({
         status: 'incoming',
         callId: data.call_id,
@@ -200,9 +216,15 @@ export const useCallStore = create<CallState>((set, get) => ({
     wsService.on('call_accepted', async (data) => {
       console.log('[Call] Call accepted:', data)
 
+      // Only the initiator tab should handle call_accepted
+      const { status, isInitiator } = get()
+      if (!isInitiator) {
+        console.log('[Call] Not the initiator, ignoring call_accepted')
+        return
+      }
+
       // Prevent duplicate processing
-      const currentStatus = get().status
-      if (currentStatus === 'connecting' || currentStatus === 'active') {
+      if (status === 'connecting' || status === 'active') {
         console.log('[Call] Already connecting/active, ignoring duplicate accepted')
         return
       }
@@ -268,6 +290,20 @@ export const useCallStore = create<CallState>((set, get) => ({
     wsService.on('call_offer', async (data) => {
       console.log('[Call] Received offer')
 
+      // Only process if this tab is handling the call
+      const { callId, status } = get()
+      if (!callId || callId !== data.call_id) {
+        console.log('[Call] Not our call, ignoring offer')
+        return
+      }
+
+      // Only the callee (non-initiator) should process offers initially
+      // But both sides can process offers during renegotiation
+      if (status === 'idle') {
+        console.log('[Call] Not in a call, ignoring offer')
+        return
+      }
+
       // Prevent concurrent processing (but allow sequential for renegotiation)
       if (processingOffer) {
         console.log('[Call] Already processing offer, queuing')
@@ -310,6 +346,19 @@ export const useCallStore = create<CallState>((set, get) => ({
     wsService.on('call_answer', async (data) => {
       console.log('[Call] Received answer')
 
+      // Only process if this tab is handling the call
+      const { callId, isInitiator } = get()
+      if (!callId || callId !== data.call_id) {
+        console.log('[Call] Not our call, ignoring answer')
+        return
+      }
+
+      // Only the initiator should process answers
+      if (!isInitiator) {
+        console.log('[Call] Not the initiator, ignoring answer')
+        return
+      }
+
       // Prevent concurrent processing
       if (processingAnswer) {
         console.log('[Call] Already processing answer, ignoring')
@@ -330,6 +379,12 @@ export const useCallStore = create<CallState>((set, get) => ({
 
     // ICE candidate
     wsService.on('call_ice_candidate', async (data) => {
+      // Only process if this tab is handling the call
+      const { callId } = get()
+      if (!callId || callId !== data.call_id) {
+        return
+      }
+
       if (data.candidate) {
         await webrtcService.addIceCandidate(data.candidate)
       }
