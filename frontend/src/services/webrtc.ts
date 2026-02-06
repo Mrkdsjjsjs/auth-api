@@ -62,12 +62,27 @@ class WebRTCService {
 
     // Handle incoming tracks (remote audio/video)
     this.peerConnection.ontrack = (event) => {
-      console.log('[WebRTC] Remote track received:', event.track.kind)
+      console.log('[WebRTC] Remote track received:', event.track.kind, 'id:', event.track.id, 'readyState:', event.track.readyState)
+
+      // Create a new MediaStream with all tracks to ensure React detects the change
       if (!this.remoteStream) {
         this.remoteStream = new MediaStream()
       }
-      this.remoteStream.addTrack(event.track)
-      this.emit('remotestream', this.remoteStream)
+
+      // Check if track already exists
+      const existingTrack = this.remoteStream.getTracks().find(t => t.id === event.track.id)
+      if (!existingTrack) {
+        this.remoteStream.addTrack(event.track)
+        console.log('[WebRTC] Track added to remote stream. Total tracks:', this.remoteStream.getTracks().length)
+      } else {
+        console.log('[WebRTC] Track already exists in remote stream')
+      }
+
+      // Create new MediaStream reference so React can detect the change
+      const newStream = new MediaStream(this.remoteStream.getTracks())
+      this.remoteStream = newStream
+
+      this.emit('remotestream', newStream)
     }
 
     // Get local audio stream
@@ -166,6 +181,7 @@ class WebRTCService {
    */
   async startScreenShare(): Promise<MediaStream> {
     try {
+      console.log('[WebRTC] Requesting screen share...')
       this.screenStream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
         audio: false,
@@ -176,6 +192,7 @@ class WebRTCService {
       }
 
       const videoTrack = this.screenStream.getVideoTracks()[0]
+      console.log('[WebRTC] Got video track:', videoTrack.label, 'readyState:', videoTrack.readyState)
 
       // Check if we already have a video sender
       const videoSender = this.peerConnection
@@ -183,24 +200,28 @@ class WebRTCService {
         .find((s) => s.track?.kind === 'video')
 
       if (videoSender) {
-        // Replace existing video track
+        console.log('[WebRTC] Replacing existing video track')
         await videoSender.replaceTrack(videoTrack)
       } else {
-        // Add new video track
+        console.log('[WebRTC] Adding new video track')
         this.peerConnection.addTrack(videoTrack, this.screenStream)
       }
 
       // Handle when user stops screen share via browser UI
       videoTrack.onended = () => {
+        console.log('[WebRTC] Video track ended by user/browser')
         this.stopScreenShare()
         this.emit('screenshareended', null)
       }
 
-      console.log('[WebRTC] Screen sharing started')
+      console.log('[WebRTC] Screen sharing started, emitting events')
       this.emit('screenshare', this.screenStream)
 
-      // Trigger renegotiation
-      this.emit('needsrenegotiation', null)
+      // Trigger renegotiation only if we added a new track
+      if (!videoSender) {
+        console.log('[WebRTC] Triggering renegotiation')
+        this.emit('needsrenegotiation', null)
+      }
 
       return this.screenStream
     } catch (error) {
@@ -257,6 +278,13 @@ class WebRTCService {
    */
   isReady(): boolean {
     return this.peerConnection !== null && this.localStream !== null
+  }
+
+  /**
+   * Get current remote stream (useful for getting stream when component mounts)
+   */
+  getRemoteStream(): MediaStream | null {
+    return this.remoteStream
   }
 
   /**

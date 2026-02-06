@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useCallStore } from '../store/callStore'
 import { PhoneOff, Mic, MicOff, Monitor, MonitorOff } from 'lucide-react'
 import webrtcService from '../services/webrtc'
@@ -49,34 +49,46 @@ export default function CallModal({ remoteUserName, remoteUserAvatar, remoteUser
   const remoteVideoRef = useRef<HTMLVideoElement>(null)
   const localVideoRef = useRef<HTMLVideoElement>(null)
 
+  // Store streams in state so we can set them when video elements mount
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
+  const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null)
+
   const displayName = remoteUserName || storeRemoteUserName || 'Unknown'
   const avatarUrl = remoteUserAvatar || storeRemoteUserAvatar
   const oderId = remoteUserId || storeRemoteUserId || 'unknown'
 
   // Handle remote stream (audio and video)
   useEffect(() => {
+    // Check for existing stream on mount
+    const existingStream = webrtcService.getRemoteStream()
+    if (existingStream) {
+      console.log('[CallModal] Found existing remote stream on mount')
+      setRemoteStream(existingStream)
+      if (audioRef.current) {
+        audioRef.current.srcObject = existingStream
+        audioRef.current.play().catch(console.error)
+      }
+    }
+
     const handleRemoteStream = (stream: MediaStream) => {
-      // Audio
+      console.log('[CallModal] Remote stream received, tracks:', stream.getTracks().map(t => `${t.kind}:${t.readyState}`))
+      setRemoteStream(stream)
+
+      // Audio - always available
       if (audioRef.current) {
         audioRef.current.srcObject = stream
         audioRef.current.play().catch(console.error)
       }
-      // Video (for screen share)
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = stream
-      }
     }
 
     const handleScreenShare = (stream: MediaStream) => {
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream
-      }
+      console.log('[CallModal] Local screen share stream')
+      setLocalScreenStream(stream)
     }
 
     const handleScreenShareEnded = () => {
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = null
-      }
+      console.log('[CallModal] Local screen share ended')
+      setLocalScreenStream(null)
     }
 
     webrtcService.on('remotestream', handleRemoteStream)
@@ -89,6 +101,26 @@ export default function CallModal({ remoteUserName, remoteUserAvatar, remoteUser
       webrtcService.off('screenshareended', handleScreenShareEnded)
     }
   }, [])
+
+  // Set remote video when element mounts (after isRemoteScreenSharing becomes true)
+  useEffect(() => {
+    if (remoteVideoRef.current && remoteStream) {
+      console.log('[CallModal] Setting remote video srcObject, video tracks:', remoteStream.getVideoTracks().length)
+      remoteVideoRef.current.srcObject = remoteStream
+      // Explicitly call play for some browsers
+      remoteVideoRef.current.play().catch(e => console.log('[CallModal] Remote video play error:', e))
+    }
+  }, [isRemoteScreenSharing, remoteStream])
+
+  // Set local video when element mounts (after isScreenSharing becomes true)
+  useEffect(() => {
+    if (localVideoRef.current && localScreenStream) {
+      console.log('[CallModal] Setting local video srcObject, video tracks:', localScreenStream.getVideoTracks().length)
+      localVideoRef.current.srcObject = localScreenStream
+      // Explicitly call play for some browsers
+      localVideoRef.current.play().catch(e => console.log('[CallModal] Local video play error:', e))
+    }
+  }, [isScreenSharing, localScreenStream])
 
   // Don't render for idle or incoming (incoming has its own notification)
   if (status === 'idle' || status === 'incoming') {
