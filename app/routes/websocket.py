@@ -27,69 +27,77 @@ async def websocket_endpoint(
     **WebSocket Real-time Connection**
 
     Connect with access token for real-time messaging.
-
-    **Client -> Server Events:**
-    - `send_message`: Send a message
-    - `typing_start`: Start typing indicator
-    - `typing_stop`: Stop typing indicator
-    - `read_receipt`: Mark messages as read
-
-    **Server -> Client Events:**
-    - `new_message`: New message received
-    - `message_edited`: Message was edited
-    - `message_deleted`: Message was deleted
-    - `typing_start`: User started typing
-    - `typing_stop`: User stopped typing
-    - `user_online`: User came online
-    - `user_offline`: User went offline
-    - `read_receipt`: Message read receipt
     """
-    # Get database session
     from app.database import engine
     from sqlmodel import Session as SQLSession
+    import traceback
 
-    with SQLSession(engine) as session:
-        user = await get_user_from_token(access_token, session)
-        if not user:
-            await websocket.close(code=4001, reason="Invalid token")
-            return
+    print(f"[WS] New connection attempt...")
 
-        # Save user_id before session closes
-        user_id = user.id
+    try:
+        # Accept the WebSocket connection FIRST
+        await websocket.accept()
+        print(f"[WS] Connection accepted")
+    except Exception as e:
+        print(f"[WS] Failed to accept connection: {e}")
+        traceback.print_exc()
+        return
 
-        await connection_manager.connect(websocket, user_id)
+    user_id = None
+    try:
+        with SQLSession(engine) as session:
+            user = await get_user_from_token(access_token, session)
+            if not user:
+                print(f"[WS] Invalid token, closing")
+                await websocket.close(code=4001, reason="Invalid token")
+                return
 
-        # Update user online status
-        user.is_online = True
-        user.last_seen = datetime.utcnow()
-        session.add(user)
-        session.commit()
+            user_id = user.id
+            print(f"[WS] User authenticated: {user_id[:8]}")
 
-        # Broadcast online status
-        await connection_manager.broadcast_user_status(user_id, True)
+            await connection_manager.connect(websocket, user_id)
 
-        try:
-            while True:
-                data = await websocket.receive_text()
-                try:
-                    message = json.loads(data)
-                    await handle_websocket_message(message, user_id, session)
-                except json.JSONDecodeError:
-                    await websocket.send_json({"error": "Invalid JSON"})
+            # Update user online status
+            user.is_online = True
+            user.last_seen = datetime.utcnow()
+            session.add(user)
+            session.commit()
 
-        except WebSocketDisconnect:
+            # Broadcast online status
+            await connection_manager.broadcast_user_status(user_id, True)
+
+            try:
+                while True:
+                    data = await websocket.receive_text()
+                    try:
+                        message = json.loads(data)
+                        await handle_websocket_message(message, user_id, session)
+                    except json.JSONDecodeError:
+                        await websocket.send_json({"error": "Invalid JSON"})
+
+            except WebSocketDisconnect:
+                print(f"[WS] User {user_id[:8]} disconnected")
+                connection_manager.disconnect(websocket, user_id)
+
+                with SQLSession(engine) as new_session:
+                    db_user = new_session.get(User, user_id)
+                    if db_user:
+                        db_user.is_online = False
+                        db_user.last_seen = datetime.utcnow()
+                        new_session.add(db_user)
+                        new_session.commit()
+
+                await connection_manager.broadcast_user_status(user_id, False)
+
+    except Exception as e:
+        print(f"[WS] Error in websocket handler: {e}")
+        traceback.print_exc()
+        if user_id:
             connection_manager.disconnect(websocket, user_id)
-
-            # Update offline status
-            with SQLSession(engine) as new_session:
-                db_user = new_session.get(User, user_id)
-                if db_user:
-                    db_user.is_online = False
-                    db_user.last_seen = datetime.utcnow()
-                    new_session.add(db_user)
-                    new_session.commit()
-
-            await connection_manager.broadcast_user_status(user_id, False)
+        try:
+            await websocket.close(code=1011, reason="Internal error")
+        except:
+            pass
 
 
 async def handle_websocket_message(message: dict, user_id: str, session: Session):
