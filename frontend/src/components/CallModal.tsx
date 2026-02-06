@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useCallStore } from '../store/callStore'
-import { Phone, PhoneOff, Mic, MicOff, Monitor, X } from 'lucide-react'
+import { PhoneOff, Mic, MicOff, Monitor } from 'lucide-react'
 import webrtcService from '../services/webrtc'
 
 // Format seconds to MM:SS

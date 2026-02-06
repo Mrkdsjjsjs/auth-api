@@ -33,7 +33,7 @@ class WebRTCService {
   /**
    * Create peer connection and get local media
    */
-  async createConnection(isInitiator: boolean): Promise<void> {
+  async createConnection(_isInitiator: boolean): Promise<void> {
     if (!this.config) {
       throw new Error('WebRTC not initialized. Call init() first.')
     }

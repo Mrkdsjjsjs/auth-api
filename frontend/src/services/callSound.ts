@@ -4,8 +4,6 @@
 
 class CallSoundService {
   private audioContext: AudioContext | null = null
-  private oscillator: OscillatorNode | null = null
-  private gainNode: GainNode | null = null
   private isPlaying = false
   private ringtoneInterval: NodeJS.Timeout | null = null
 

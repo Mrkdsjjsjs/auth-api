@@ -82,7 +82,7 @@ export const useCallStore = create<CallState>((set, get) => ({
   },
 
   acceptCall: async () => {
-    const { callId, chatId } = get()
+    const { callId } = get()
     if (!callId) return
 
     try {
