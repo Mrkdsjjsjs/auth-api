@@ -350,7 +350,16 @@ export const useCallStore = create<CallState>((set, get) => ({
       console.error('[Call] Error:', data.error)
       callSoundService.stopDialTone()
       callSoundService.stopRingtone()
-      set({ status: 'idle', error: data.error })
+      webrtcService.close()
+
+      // User-friendly error messages
+      let errorMessage = data.error
+      if (data.error === 'User is offline') {
+        errorMessage = 'User is offline'
+      }
+
+      set({ status: 'ended', error: errorMessage })
+      setTimeout(() => get().reset(), 3000)
     }, true)
 
     // WebRTC ICE candidate handler

@@ -183,10 +183,21 @@ async def handle_websocket_message(message: dict, user_id: str, session: Session
             })
             return
 
+        # Check if callee is online
+        if not connection_manager.is_user_online(callee_id):
+            print(f"[Call] Callee {callee_id[:8]} is offline")
+            await connection_manager.send_to_user(user_id, {
+                "type": "call_error",
+                "error": "User is offline"
+            })
+            return
+
         # Get caller info
         caller = session.get(User, user_id)
         caller_name = caller.display_name or caller.username or "Unknown"
         caller_avatar = caller.avatar_url if caller else None
+
+        print(f"[Call] {user_id[:8]} calling {callee_id[:8]}")
 
         try:
             call = call_service.create_call(
@@ -197,6 +208,7 @@ async def handle_websocket_message(message: dict, user_id: str, session: Session
             )
 
             # Notify callee about incoming call
+            print(f"[Call] Sending call_incoming to {callee_id[:8]}")
             await connection_manager.send_to_user(callee_id, {
                 "type": "call_incoming",
                 "call_id": call.id,
