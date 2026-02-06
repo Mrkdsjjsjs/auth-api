@@ -67,30 +67,31 @@ export default function ChatPage() {
     notificationService.requestPermission()
   }, [])
 
-  // Auto-scroll to bottom when new messages arrive (only if already at bottom)
-  useEffect(() => {
-    if (shouldScrollToBottom) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }
-  }, [messages, shouldScrollToBottom])
+  // Track if this is initial load for current chat
+  const [initialLoad, setInitialLoad] = useState(true)
 
   // Reset scroll position when changing chats
   useEffect(() => {
     setShouldScrollToBottom(true)
+    setInitialLoad(true)
     // Clear decrypted media for old chat
     setDecryptedMediaUrls({})
     setLoadingMedia({})
   }, [currentChatId])
 
-  // Scroll to bottom when messages load for the first time or chat changes
+  // Scroll to bottom - instant on initial load, smooth on new messages
   useEffect(() => {
     if (messages.length > 0 && shouldScrollToBottom) {
-      // Use setTimeout to ensure DOM is updated
-      setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
-      }, 100)
+      if (initialLoad) {
+        // Instant scroll on initial load (no animation)
+        messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
+        setInitialLoad(false)
+      } else {
+        // Smooth scroll for new messages
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      }
     }
-  }, [currentChatId, messages.length > 0])
+  }, [messages, shouldScrollToBottom, initialLoad])
 
   // Handle scroll for infinite scroll
   const handleScroll = () => {
