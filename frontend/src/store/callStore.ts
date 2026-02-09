@@ -298,6 +298,10 @@ export const useCallStore = create<CallState>((set, get) => ({
         await webrtcService.setRemoteDescription(data.sdp)
         const answer = await webrtcService.createAnswer()
         await callsApi.answer(data.call_id, answer)
+        // Force rebuild remote stream after SDP exchange completes
+        // onunmute may not fire reliably in all browsers for reused transceivers
+        setTimeout(() => webrtcService.rebuildRemoteStream(), 300)
+        setTimeout(() => webrtcService.rebuildRemoteStream(), 1000)
       } catch (error) {
         console.error('[Call] Offer handling error:', error)
       } finally {
@@ -326,6 +330,9 @@ export const useCallStore = create<CallState>((set, get) => ({
       try {
         await webrtcService.setRemoteDescription(data.sdp)
         console.log('[Call] Remote description set successfully')
+        // Force rebuild after answer applied (screen share renegotiation)
+        setTimeout(() => webrtcService.rebuildRemoteStream(), 300)
+        setTimeout(() => webrtcService.rebuildRemoteStream(), 1000)
       } catch (error: any) {
         if (!error?.message?.includes('stable')) {
           console.error('[Call] Answer handling error:', error)

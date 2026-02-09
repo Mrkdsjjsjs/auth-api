@@ -68,10 +68,12 @@ export default function CallModal({ remoteUserName, remoteUserAvatar, remoteUser
     }
   }, [remoteStream])
 
-  // Set remote video when element mounts (after isRemoteScreenSharing becomes true)
+  // Set remote video when element mounts or stream changes
   useEffect(() => {
     if (remoteVideoRef.current && remoteStream) {
-      console.log('[CallModal] Setting remote video srcObject, video tracks:', remoteStream.getVideoTracks().length)
+      const videoTracks = remoteStream.getVideoTracks()
+      console.log('[CallModal] Setting remote video srcObject, video tracks:', videoTracks.length,
+        videoTracks.map(t => `${t.id}:${t.readyState}:muted=${t.muted}`))
       remoteVideoRef.current.srcObject = remoteStream
       remoteVideoRef.current.play().catch(e => console.log('[CallModal] Remote video play error:', e))
     }

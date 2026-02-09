@@ -29,7 +29,7 @@ class WebRTCService {
    * Rebuild remoteStream from all live receiver tracks.
    * Creates a new MediaStream reference so React detects the change.
    */
-  private rebuildRemoteStream(): void {
+  rebuildRemoteStream(): void {
     if (!this.peerConnection) return
 
     const tracks = this.peerConnection.getReceivers()
@@ -37,7 +37,7 @@ class WebRTCService {
       .filter(t => t && t.readyState === 'live')
 
     this.remoteStream = new MediaStream(tracks)
-    console.log('[WebRTC] Remote stream rebuilt, tracks:', tracks.map(t => `${t.kind}:${t.readyState}`))
+    console.log('[WebRTC] Remote stream rebuilt, tracks:', tracks.map(t => `${t.kind}:${t.readyState}:muted=${t.muted}`))
     this.emit('remotestream', this.remoteStream)
   }
 
