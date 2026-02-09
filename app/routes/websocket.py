@@ -294,8 +294,9 @@ async def handle_websocket_message(message: dict, user_id: str, session: Session
 
         call = call_service.get_call(call_id)
         if call:
-            # Forward offer to callee
-            await connection_manager.send_to_user(call.callee_id, {
+            # Forward offer to the OTHER user (not back to sender)
+            other_user = call.callee_id if call.caller_id == user_id else call.caller_id
+            await connection_manager.send_to_user(other_user, {
                 "type": "call_offer",
                 "call_id": call_id,
                 "sdp": sdp
@@ -309,8 +310,9 @@ async def handle_websocket_message(message: dict, user_id: str, session: Session
 
         call = call_service.get_call(call_id)
         if call:
-            # Forward answer to caller
-            await connection_manager.send_to_user(call.caller_id, {
+            # Forward answer to the OTHER user (not back to sender)
+            other_user = call.callee_id if call.caller_id == user_id else call.caller_id
+            await connection_manager.send_to_user(other_user, {
                 "type": "call_answer",
                 "call_id": call_id,
                 "sdp": sdp
