@@ -60,9 +60,10 @@ export const useEncryptionStore = create<EncryptionState>((set, get) => ({
             serverPublicKey,
           })
 
-          // If no server public key, exchange keys now
-          if (!serverPublicKey && keyPair) {
-            console.log('[Encryption] No server key, initiating exchange...')
+          // Always exchange keys to ensure sync with server
+          // This is needed for cross-domain scenarios where localStorage differs
+          if (keyPair) {
+            console.log('[Encryption] Syncing server key...')
             await exchangeKeysWithServer(keyPair)
           }
 
