@@ -39,6 +39,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 COOKIE_SECURE = True  # HTTPS only
 COOKIE_HTTPONLY = True  # Not accessible via JS
 COOKIE_SAMESITE = "none"  # Allow cross-site for CORS
+COOKIE_DOMAIN = ".duckdns.org"  # Shared across subdomains
 ACCESS_TOKEN_MAX_AGE = 15 * 60  # 15 minutes
 REFRESH_TOKEN_MAX_AGE = 7 * 24 * 60 * 60  # 7 days
 
@@ -52,7 +53,8 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
         httponly=COOKIE_HTTPONLY,
         secure=COOKIE_SECURE,
         samesite=COOKIE_SAMESITE,
-        path="/"
+        path="/",
+        domain=COOKIE_DOMAIN
     )
     response.set_cookie(
         key="refresh_token",
@@ -61,7 +63,8 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
         httponly=COOKIE_HTTPONLY,
         secure=COOKIE_SECURE,
         samesite=COOKIE_SAMESITE,
-        path="/"
+        path="/",
+        domain=COOKIE_DOMAIN
     )
 
 
@@ -223,8 +226,8 @@ def logout(response: Response):
 
     Clears the httpOnly cookies containing tokens.
     """
-    response.delete_cookie(key="access_token", path="/", samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE)
-    response.delete_cookie(key="refresh_token", path="/", samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE)
+    response.delete_cookie(key="access_token", path="/", samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE, domain=COOKIE_DOMAIN)
+    response.delete_cookie(key="refresh_token", path="/", samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE, domain=COOKIE_DOMAIN)
     return MessageResponse(message="Logged out successfully")
 
 

@@ -48,7 +48,7 @@ services:
       - SECRET_KEY=${SECRET_KEY:-super-secret-key-change-me}
       - AES_STORAGE_KEY=${AES_STORAGE_KEY}
       - TURN_SHARED_SECRET=${TURN_SHARED_SECRET:-super-secret-turn-key-change-me}
-      - CORS_ORIGINS=http://localhost:3000,http://localhost:5173,https://gayauth228gay.duckdns.org
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:5173,https://gayauth228gay.duckdns.org,https://shadowlum.duckdns.org
     volumes:
       - ./app/static/uploads:/app/app/static/uploads
       - ./app/encrypted_storage:/app/app/encrypted_storage
