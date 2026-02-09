@@ -3,6 +3,7 @@ import { useCallStore } from '../store/callStore'
 import { PhoneOff, Mic, MicOff, Monitor, MonitorOff, Maximize, Minimize } from 'lucide-react'
 import webrtcService from '../services/webrtc'
 import { getStaticUrl } from '../utils/staticUrl'
+import { VideoAvatar } from './VideoAvatar'
 
 // Emoji avatars based on user id hash
 const AVATAR_EMOJIS = ['🦊', '🐼', '🦁', '🐯', '🐻', '🐨', '🐸', '🐵', '🦄', '🐲', '🦋', '🌸', '🌺', '🌻', '🍀', '⭐', '🌙', '🔥', '💎', '🎯', '🎨', '🎭', '🎪', '🎬', '🎤', '🎸', '🎹', '🎺', '🥁', '🎮']
@@ -193,7 +194,7 @@ export default function CallModal({ remoteUserName, remoteUserAvatar, remoteUser
       return <span className="call-avatar-emoji">{url.slice(6)}</span>
     }
     if (url?.match(/\.(mp4|webm|mov)$/i)) {
-      return <video src={url} autoPlay loop muted playsInline className="call-avatar-img" />
+      return <VideoAvatar src={url} className="call-avatar-img" />
     }
     if (url) {
       return <img src={url} alt="" className="call-avatar-img" />

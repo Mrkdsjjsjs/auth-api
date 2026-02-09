@@ -1,6 +1,7 @@
 import { useCallStore } from '../store/callStore'
 import { Phone, PhoneOff } from 'lucide-react'
 import { getStaticUrl } from '../utils/staticUrl'
+import { VideoAvatar } from './VideoAvatar'
 
 // Emoji avatars based on user id hash
 const AVATAR_EMOJIS = ['🦊', '🐼', '🦁', '🐯', '🐻', '🐨', '🐸', '🐵', '🦄', '🐲', '🦋', '🌸', '🌺', '🌻', '🍀', '⭐', '🌙', '🔥', '💎', '🎯', '🎨', '🎭', '🎪', '🎬', '🎤', '🎸', '🎹', '🎺', '🥁', '🎮']
@@ -35,7 +36,7 @@ export default function IncomingCallNotification() {
       return <span className="avatar-emoji">{url.slice(6)}</span>
     }
     if (url?.match(/\.(mp4|webm|mov)$/i)) {
-      return <video src={url} autoPlay loop muted playsInline className="avatar-img" />
+      return <VideoAvatar src={url} className="avatar-img" />
     }
     if (url) {
       return <img src={url} alt="" className="avatar-img" />

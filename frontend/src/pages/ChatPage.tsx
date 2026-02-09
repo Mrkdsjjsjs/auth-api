@@ -9,6 +9,7 @@ import { cryptoService, base64ToUint8Array } from '../services/crypto'
 import wsService from '../services/websocket'
 import { notificationService } from '../services/notification'
 import { getStaticUrl } from '../utils/staticUrl'
+import { VideoAvatar } from '../components/VideoAvatar'
 import { format } from 'date-fns'
 import { Send, Plus, LogOut, Search, MessageCircle, X, User, Lock, Unlock, ArrowLeft, Paperclip, FileIcon, Image, Music, Download, AtSign, Phone } from 'lucide-react'
 import CallModal from '../components/CallModal'
@@ -150,7 +151,7 @@ export default function ChatPage() {
       return <span className={size === 'large' ? 'emoji-lg' : ''}>{url.slice(6)}</span>
     }
     if (url?.match(/\.(mp4|webm|mov)$/i)) {
-      return <video src={url} autoPlay loop muted playsInline className="avatar-img" />
+      return <VideoAvatar src={url} className="avatar-img" />
     }
     if (url) {
       return <img src={url} alt="" className="avatar-img" />
@@ -739,7 +740,7 @@ export default function ChatPage() {
                   if (url?.startsWith('emoji:')) {
                     return <span style={{ fontSize: 48 }}>{url.slice(6)}</span>
                   } else if (url?.match(/\.(mp4|webm|mov)$/i)) {
-                    return <video src={url} autoPlay loop muted playsInline className="avatar-img" />
+                    return <VideoAvatar src={url} className="avatar-img" />
                   } else if (url) {
                     return <img src={url} alt="" className="avatar-img" />
                   } else {

@@ -4,6 +4,7 @@ import { useAuthStore } from '../store/authStore'
 import { useEncryptionStore } from '../store/encryptionStore'
 import { usersApi } from '../services/api'
 import { getStaticUrl } from '../utils/staticUrl'
+import { VideoAvatar } from '../components/VideoAvatar'
 import { ArrowLeft, Camera, Check, X, Shield, Key, Lock, Smile } from 'lucide-react'
 
 // Emoji avatars for picker
@@ -173,7 +174,7 @@ export default function ProfilePage() {
               if (url?.startsWith('emoji:')) {
                 return <span className="emoji-display">{url.slice(6)}</span>
               } else if (url?.match(/\.(mp4|webm|mov)$/i)) {
-                return <video src={url} autoPlay loop muted playsInline className="avatar-video" />
+                return <VideoAvatar src={url} className="avatar-video" />
               } else if (url) {
                 return <img src={url} alt="Avatar" />
               } else {

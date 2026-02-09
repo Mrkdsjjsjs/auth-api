@@ -4,6 +4,7 @@ import { useAuthStore } from '../store/authStore'
 import { useChatStore } from '../store/chatStore'
 import { usersApi } from '../services/api'
 import { getStaticUrl } from '../utils/staticUrl'
+import { VideoAvatar } from '../components/VideoAvatar'
 import { ArrowLeft, MessageCircle, AtSign } from 'lucide-react'
 
 const AVATAR_EMOJIS = ['🦊', '🐼', '🦁', '🐯', '🐻', '🐨', '🐸', '🐵', '🦄', '🐲', '🦋', '🌸', '🌺', '🌻', '🍀', '⭐', '🌙', '🔥', '💎', '🎯', '🎨', '🎭', '🎪', '🎬', '🎤', '🎸', '🎹', '🎺', '🥁', '🎮']
@@ -118,7 +119,7 @@ export default function UserProfilePage() {
               if (url?.startsWith('emoji:')) {
                 return <span className="emoji-display">{url.slice(6)}</span>
               } else if (url?.match(/\.(mp4|webm|mov)$/i)) {
-                return <video src={url} autoPlay loop muted playsInline className="avatar-video" />
+                return <VideoAvatar src={url} className="avatar-video" />
               } else if (url) {
                 return <img src={url} alt="Avatar" />
               } else {
