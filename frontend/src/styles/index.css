@@ -352,6 +352,9 @@ body {
   border-radius: 16px;
   font-size: 15px;
   line-height: 1.4;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  max-width: 100%;
 }
 
 .message.sent .message-bubble {
