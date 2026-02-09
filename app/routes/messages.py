@@ -174,10 +174,20 @@ def get_messages(
         for msg in messages
     ]
 
+    # Get remote user's last_read_message_id (for read receipts)
+    other_member = session.exec(
+        select(ChatMember).where(
+            ChatMember.chat_id == chat_id,
+            ChatMember.user_id != current_user.id
+        )
+    ).first()
+    remote_last_read = other_member.last_read_message_id if other_member else None
+
     return MessageListResponse(
         messages=message_responses,
         has_more=has_more,
-        next_cursor=messages[0].id if messages and has_more else None
+        next_cursor=messages[0].id if messages and has_more else None,
+        remote_last_read_message_id=remote_last_read
     )
 
 

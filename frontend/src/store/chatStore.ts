@@ -70,6 +70,7 @@ interface ChatState {
   isLoading: boolean
   isLoadingMore: boolean
   hasMoreMessages: boolean
+  remoteLastReadMessageId: string | null
 
   loadChats: () => Promise<void>
   selectChat: (chatId: string) => Promise<void>
@@ -119,6 +120,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isLoading: false,
   isLoadingMore: false,
   hasMoreMessages: true,
+  remoteLastReadMessageId: null,
 
   loadChats: async () => {
     try {
@@ -130,7 +132,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   selectChat: async (chatId) => {
-    set({ currentChatId: chatId, messages: [], isLoading: true, hasMoreMessages: true })
+    set({ currentChatId: chatId, messages: [], isLoading: true, hasMoreMessages: true, remoteLastReadMessageId: null })
 
     try {
       const { data } = await messagesApi.list(chatId)
@@ -143,7 +145,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({
         messages: decryptedMessages,
         isLoading: false,
-        hasMoreMessages: data.has_more || false
+        hasMoreMessages: data.has_more || false,
+        remoteLastReadMessageId: data.remote_last_read_message_id || null
       })
 
       // Mark last message as read
@@ -639,6 +642,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ),
         },
       }))
+    }, true)
+
+    // Handle read receipts
+    wsService.on('read_receipt', (data) => {
+      const { currentChatId } = get()
+      if (data.chat_id === currentChatId) {
+        set({ remoteLastReadMessageId: data.message_id })
+      }
     }, true)
 
     // Handle online status

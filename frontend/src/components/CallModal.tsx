@@ -55,6 +55,25 @@ export default function CallModal({ remoteUserName, remoteUserAvatar, remoteUser
   const [isFullscreen, setIsFullscreen] = useState(false)
   const videoContainerRef = useRef<HTMLDivElement>(null)
 
+  // Pinch-to-zoom state
+  const [videoScale, setVideoScale] = useState(1)
+  const [videoTranslate, setVideoTranslate] = useState({ x: 0, y: 0 })
+  const touchStateRef = useRef<{
+    initialDistance: number
+    initialScale: number
+    lastTouchX: number
+    lastTouchY: number
+    isPinching: boolean
+    lastTapTime: number
+  }>({
+    initialDistance: 0,
+    initialScale: 1,
+    lastTouchX: 0,
+    lastTouchY: 0,
+    isPinching: false,
+    lastTapTime: 0,
+  })
+
   const displayName = remoteUserName || storeRemoteUserName || 'Unknown'
   const avatarUrl = remoteUserAvatar || storeRemoteUserAvatar
   const oderId = remoteUserId || storeRemoteUserId || 'unknown'
@@ -100,6 +119,72 @@ export default function CallModal({ remoteUserName, remoteUserAvatar, remoteUser
     return () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange)
       document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
+    }
+  }, [])
+
+  // Reset zoom when screen share changes
+  useEffect(() => {
+    setVideoScale(1)
+    setVideoTranslate({ x: 0, y: 0 })
+  }, [isRemoteScreenSharing])
+
+  const getTouchDistance = (touches: React.TouchList) => {
+    const dx = touches[0].clientX - touches[1].clientX
+    const dy = touches[0].clientY - touches[1].clientY
+    return Math.sqrt(dx * dx + dy * dy)
+  }
+
+  const handleVideoTouchStart = useCallback((e: React.TouchEvent) => {
+    const ts = touchStateRef.current
+    if (e.touches.length === 2) {
+      // Pinch start
+      ts.isPinching = true
+      ts.initialDistance = getTouchDistance(e.touches)
+      ts.initialScale = videoScale
+    } else if (e.touches.length === 1) {
+      // Pan start or double-tap detection
+      const now = Date.now()
+      if (now - ts.lastTapTime < 300) {
+        // Double tap — reset zoom
+        setVideoScale(1)
+        setVideoTranslate({ x: 0, y: 0 })
+        ts.lastTapTime = 0
+        return
+      }
+      ts.lastTapTime = now
+      ts.lastTouchX = e.touches[0].clientX
+      ts.lastTouchY = e.touches[0].clientY
+      ts.isPinching = false
+    }
+  }, [videoScale])
+
+  const handleVideoTouchMove = useCallback((e: React.TouchEvent) => {
+    e.preventDefault()
+    const ts = touchStateRef.current
+    if (e.touches.length === 2 && ts.isPinching) {
+      // Pinch zoom
+      const currentDistance = getTouchDistance(e.touches)
+      const newScale = Math.min(4, Math.max(1, ts.initialScale * (currentDistance / ts.initialDistance)))
+      setVideoScale(newScale)
+      if (newScale === 1) {
+        setVideoTranslate({ x: 0, y: 0 })
+      }
+    } else if (e.touches.length === 1 && !ts.isPinching && videoScale > 1) {
+      // Pan when zoomed
+      const dx = e.touches[0].clientX - ts.lastTouchX
+      const dy = e.touches[0].clientY - ts.lastTouchY
+      ts.lastTouchX = e.touches[0].clientX
+      ts.lastTouchY = e.touches[0].clientY
+      setVideoTranslate(prev => ({
+        x: prev.x + dx,
+        y: prev.y + dy,
+      }))
+    }
+  }, [videoScale])
+
+  const handleVideoTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length < 2) {
+      touchStateRef.current.isPinching = false
     }
   }, [])
 
@@ -169,7 +254,14 @@ export default function CallModal({ remoteUserName, remoteUserAvatar, remoteUser
     <div className={`call-fullscreen ${hasVideo ? 'has-video' : ''}`}>
       {/* Video area */}
       {hasVideo && (
-        <div className="call-video-container" ref={videoContainerRef}>
+        <div
+          className="call-video-container"
+          ref={videoContainerRef}
+          onTouchStart={handleVideoTouchStart}
+          onTouchMove={handleVideoTouchMove}
+          onTouchEnd={handleVideoTouchEnd}
+          style={{ touchAction: 'none' }}
+        >
           {/* Remote screen share */}
           {isRemoteScreenSharing && (
             <video
@@ -178,6 +270,10 @@ export default function CallModal({ remoteUserName, remoteUserAvatar, remoteUser
               playsInline
               className="call-video-main"
               onClick={toggleFullscreen}
+              style={{
+                transform: `scale(${videoScale}) translate(${videoTranslate.x / videoScale}px, ${videoTranslate.y / videoScale}px)`,
+                transition: videoScale === 1 ? 'transform 0.2s' : 'none',
+              }}
             />
           )}
 
@@ -252,11 +348,11 @@ export default function CallModal({ remoteUserName, remoteUserAvatar, remoteUser
         <button
           className={`call-control-btn ${isScreenSharing ? 'active' : ''}`}
           onClick={toggleScreenShare}
-          disabled={status !== 'active'}
-          title={isScreenSharing ? 'Stop sharing' : 'Share screen'}
+          disabled={status !== 'active' || isRemoteScreenSharing}
+          title={isRemoteScreenSharing ? 'Remote user is sharing' : isScreenSharing ? 'Stop sharing' : 'Share screen'}
         >
           {isScreenSharing ? <MonitorOff size={24} /> : <Monitor size={24} />}
-          <span>{isScreenSharing ? 'Stop' : 'Share'}</span>
+          <span>{isRemoteScreenSharing ? 'Viewing' : isScreenSharing ? 'Stop' : 'Share'}</span>
         </button>
 
         <button

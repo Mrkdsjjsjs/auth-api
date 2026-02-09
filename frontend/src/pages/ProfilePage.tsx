@@ -478,13 +478,14 @@ export default function ProfilePage() {
           background: var(--bg-tertiary);
           border-radius: 12px;
           margin-top: 12px;
-          max-width: 320px;
+          max-width: 350px;
           margin-left: auto;
           margin-right: auto;
+          justify-items: center;
         }
 
         .emoji-option {
-          width: 36px;
+          min-width: 36px;
           height: 36px;
           display: flex;
           align-items: center;

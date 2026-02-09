@@ -39,6 +39,7 @@ export default function ChatPage() {
     typingUsers,
     isLoadingMore,
     hasMoreMessages,
+    remoteLastReadMessageId,
     loadChats,
     selectChat,
     loadMoreMessages,
@@ -236,6 +237,11 @@ export default function ChatPage() {
   }
 
   const typingInCurrentChat = currentChatId ? typingUsers[currentChatId] || [] : []
+
+  // Determine which sent messages have been read by the remote user
+  const remoteReadIndex = remoteLastReadMessageId
+    ? messages.findIndex(m => m.id === remoteLastReadMessageId)
+    : -1
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -597,26 +603,35 @@ export default function ChatPage() {
                   Loading...
                 </div>
               )}
-              {messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`message ${msg.sender_id === user?.id ? 'sent' : 'received'}`}
-                >
-                  <div className="message-bubble">
-                    {msg.is_deleted ? (
-                      <em style={{ opacity: 0.5 }}>Message deleted</em>
-                    ) : msg.encrypted_file || msg.encrypted_file_id || msg.message_type === 'image' || msg.message_type === 'file' || msg.message_type === 'voice' ? (
-                      renderFileMessage(msg)
-                    ) : (
-                      msg.content
-                    )}
+              {messages.map((msg, msgIndex) => {
+                const isSent = msg.sender_id === user?.id
+                const isRead = isSent && remoteReadIndex >= 0 && msgIndex <= remoteReadIndex
+                return (
+                  <div
+                    key={msg.id}
+                    className={`message ${isSent ? 'sent' : 'received'}`}
+                  >
+                    <div className="message-bubble">
+                      {msg.is_deleted ? (
+                        <em style={{ opacity: 0.5 }}>Message deleted</em>
+                      ) : msg.encrypted_file || msg.encrypted_file_id || msg.message_type === 'image' || msg.message_type === 'file' || msg.message_type === 'voice' ? (
+                        renderFileMessage(msg)
+                      ) : (
+                        msg.content
+                      )}
+                    </div>
+                    <div className="message-time">
+                      {format(new Date(msg.created_at), 'HH:mm')}
+                      {msg.is_edited && ' • edited'}
+                      {isSent && (
+                        <span className={`message-check ${isRead ? 'read' : ''}`}>
+                          {isRead ? ' ✓✓' : ' ✓'}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className="message-time">
-                    {format(new Date(msg.created_at), 'HH:mm')}
-                    {msg.is_edited && ' • edited'}
-                  </div>
-                </div>
-              ))}
+                )
+              })}
 
               {typingInCurrentChat.length > 0 && (
                 <div className="typing-indicator">Someone is typing...</div>

@@ -379,6 +379,14 @@ body {
   text-align: right;
 }
 
+.message-check {
+  color: var(--text-secondary);
+}
+
+.message-check.read {
+  color: #3b82f6;
+}
+
 /* Message input */
 .message-input-container {
   padding: 16px 20px;

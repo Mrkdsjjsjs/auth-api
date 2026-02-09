@@ -68,3 +68,4 @@ class MessageListResponse(BaseModel):
     messages: list[MessageResponse]
     has_more: bool
     next_cursor: Optional[str] = None
+    remote_last_read_message_id: Optional[str] = None
