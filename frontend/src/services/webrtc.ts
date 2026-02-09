@@ -204,8 +204,11 @@ class WebRTCService {
   async startScreenShare(): Promise<MediaStream> {
     console.log('[WebRTC] Starting screen share...')
 
-    // Stop any existing screen share first
-    this.doStopScreenShare()
+    // Stop existing screen stream tracks
+    if (this.screenStream) {
+      this.screenStream.getTracks().forEach((t) => t.stop())
+      this.screenStream = null
+    }
 
     this.screenStream = await navigator.mediaDevices.getDisplayMedia({
       video: true,
@@ -216,34 +219,35 @@ class WebRTCService {
 
     const videoTrack = this.screenStream.getVideoTracks()[0]
 
-    // Add video track and keep reference to sender for later removal
-    this.screenSender = this.peerConnection.addTrack(videoTrack, this.screenStream)
-    console.log('[WebRTC] Video track added to connection')
+    if (this.screenSender) {
+      // Reuse existing sender — just swap the track, no renegotiation needed
+      await this.screenSender.replaceTrack(videoTrack)
+      console.log('[WebRTC] Video track replaced on existing sender (no renegotiation)')
+    } else {
+      // First time — addTrack creates a transceiver, needs renegotiation
+      this.screenSender = this.peerConnection.addTrack(videoTrack, this.screenStream)
+      console.log('[WebRTC] Video track added to connection (first time, will renegotiate)')
+      this.emit('needsrenegotiation', null)
+    }
 
     videoTrack.onended = () => {
       console.log('[WebRTC] Screen share ended by user')
       this.doStopScreenShare()
       this.emit('screenshareended', null)
-      this.emit('needsrenegotiation', null)
     }
 
     this.emit('screenshare', this.screenStream)
-    this.emit('needsrenegotiation', null)
-
     return this.screenStream
   }
 
   private doStopScreenShare(): void {
-    // Remove sender from PeerConnection (this tells remote side track is gone)
-    if (this.screenSender && this.peerConnection) {
-      try {
-        this.peerConnection.removeTrack(this.screenSender)
-        console.log('[WebRTC] Screen share sender removed from connection')
-      } catch (e) {
-        console.warn('[WebRTC] Error removing screen sender:', e)
-      }
+    // Replace track with null — keeps sender alive for reuse, no renegotiation
+    if (this.screenSender) {
+      this.screenSender.replaceTrack(null).catch((e) => {
+        console.warn('[WebRTC] Error replacing track with null:', e)
+      })
+      // Keep screenSender reference for reuse on next startScreenShare
     }
-    this.screenSender = null
 
     // Stop all tracks in the screen stream
     if (this.screenStream) {
@@ -254,7 +258,7 @@ class WebRTCService {
 
   stopScreenShare(): void {
     this.doStopScreenShare()
-    this.emit('needsrenegotiation', null)
+    // No renegotiation needed — replaceTrack(null) doesn't change SDP
   }
 
   async restartIce(): Promise<RTCSessionDescriptionInit | null> {
@@ -276,7 +280,12 @@ class WebRTCService {
     this.localStream?.getTracks().forEach((t) => t.stop())
     this.localStream = null
 
-    this.doStopScreenShare()
+    // Stop screen share tracks directly (don't use doStopScreenShare — PC is closing)
+    if (this.screenStream) {
+      this.screenStream.getTracks().forEach((t) => t.stop())
+      this.screenStream = null
+    }
+    this.screenSender = null
 
     if (this.peerConnection) {
       this.peerConnection.onicecandidate = null
