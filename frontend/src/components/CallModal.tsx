@@ -106,6 +106,14 @@ export default function CallModal({ remoteUserName, remoteUserAvatar, remoteUser
     }
   }, [])
 
+  // Ensure audio is always connected when remoteStream changes (new object reference)
+  useEffect(() => {
+    if (audioRef.current && remoteStream) {
+      audioRef.current.srcObject = remoteStream
+      audioRef.current.play().catch(() => {})
+    }
+  }, [remoteStream])
+
   // Set remote video when element mounts (after isRemoteScreenSharing becomes true)
   useEffect(() => {
     if (remoteVideoRef.current && remoteStream) {

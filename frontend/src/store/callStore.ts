@@ -41,6 +41,10 @@ interface CallState {
 let durationInterval: NodeJS.Timeout | null = null
 let reconnectTimeout: NodeJS.Timeout | null = null
 
+// Guards against duplicate WS messages causing concurrent SDP operations
+let isProcessingOffer = false
+let isProcessingAnswer = false
+
 function clearTimers() {
   if (durationInterval) {
     clearInterval(durationInterval)
@@ -169,6 +173,9 @@ export const useCallStore = create<CallState>((set, get) => ({
   setupCallHandlers: () => {
     // Clear any previous WebRTC event handlers to prevent accumulation
     webrtcService.offAll()
+    // Reset signaling guards
+    isProcessingOffer = false
+    isProcessingAnswer = false
 
     // Incoming call
     wsService.on('call_incoming', (data) => {
@@ -187,10 +194,11 @@ export const useCallStore = create<CallState>((set, get) => ({
       callSoundService.startRingtone()
     }, true)
 
-    // Call accepted
+    // Call accepted — only process once (guard against duplicate WS)
     wsService.on('call_accepted', async (data) => {
       const { isInitiator, status } = get()
-      if (!isInitiator || status === 'active') return
+      // Strict guard: only from 'ringing' state (set() to 'connecting' is synchronous)
+      if (!isInitiator || status !== 'ringing') return
 
       set({ status: 'connecting' })
       callSoundService.stopDialTone()
@@ -234,16 +242,18 @@ export const useCallStore = create<CallState>((set, get) => ({
       get().reset()
     }, true)
 
-    // Offer received (initial or renegotiation)
+    // Offer received (initial or renegotiation) — guarded against duplicates
     wsService.on('call_offer', async (data) => {
-      console.log('[Call] Offer received for call:', data.call_id)
       const { callId } = get()
-      console.log('[Call] Our callId:', callId)
 
-      if (!callId || callId !== data.call_id) {
-        console.log('[Call] Ignoring offer - callId mismatch')
+      if (!callId || callId !== data.call_id) return
+
+      // Prevent concurrent offer processing (duplicate WS messages)
+      if (isProcessingOffer) {
+        console.log('[Call] Skipping duplicate offer')
         return
       }
+      isProcessingOffer = true
 
       // Wait for connection
       let tries = 0
@@ -254,40 +264,50 @@ export const useCallStore = create<CallState>((set, get) => ({
 
       if (!webrtcService.isReady()) {
         console.log('[Call] WebRTC not ready after waiting')
+        isProcessingOffer = false
         return
       }
 
       try {
-        console.log('[Call] Setting remote description from offer')
         await webrtcService.setRemoteDescription(data.sdp)
-        console.log('[Call] Creating answer')
         const answer = await webrtcService.createAnswer()
-        console.log('[Call] Sending answer')
         await callsApi.answer(data.call_id, answer)
       } catch (error) {
         console.error('[Call] Offer handling error:', error)
+      } finally {
+        isProcessingOffer = false
       }
     }, true)
 
-    // Answer received
+    // Answer received — guarded against duplicates
     wsService.on('call_answer', async (data) => {
-      console.log('[Call] Answer received for call:', data.call_id)
       const { callId } = get()
-      console.log('[Call] Our callId:', callId)
 
-      if (!callId || callId !== data.call_id) {
-        console.log('[Call] Ignoring answer - callId mismatch')
+      if (!callId || callId !== data.call_id) return
+
+      // Prevent concurrent answer processing (duplicate WS messages)
+      if (isProcessingAnswer) {
+        console.log('[Call] Skipping duplicate answer')
         return
       }
 
+      // Only process answer when we're waiting for one
+      const sigState = webrtcService.getSignalingState()
+      if (sigState !== 'have-local-offer') {
+        console.log('[Call] Ignoring answer - signaling state:', sigState)
+        return
+      }
+
+      isProcessingAnswer = true
       try {
-        console.log('[Call] Setting remote description from answer')
         await webrtcService.setRemoteDescription(data.sdp)
         console.log('[Call] Remote description set successfully')
       } catch (error: any) {
         if (!error?.message?.includes('stable')) {
           console.error('[Call] Answer handling error:', error)
         }
+      } finally {
+        isProcessingAnswer = false
       }
     }, true)
 
@@ -378,7 +398,6 @@ export const useCallStore = create<CallState>((set, get) => ({
     })
 
     // WebRTC: Renegotiation (for screen share)
-    // Either side can trigger renegotiation
     webrtcService.on('needsrenegotiation', async () => {
       const { callId } = get()
       if (!callId) return

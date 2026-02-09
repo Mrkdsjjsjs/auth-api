@@ -74,28 +74,27 @@ class WebRTCService {
     this.peerConnection.ontrack = (event) => {
       console.log('[WebRTC] Track received:', event.track.kind, 'id:', event.track.id)
 
-      if (!this.remoteStream) {
-        this.remoteStream = new MediaStream()
+      // Build new MediaStream with all live tracks + new track
+      // New object reference forces React state update
+      const tracks: MediaStreamTrack[] = []
+
+      if (this.remoteStream) {
+        this.remoteStream.getTracks().forEach(t => {
+          if (t.readyState !== 'ended' && t.id !== event.track.id) {
+            tracks.push(t)
+          }
+        })
       }
 
-      // Remove ended tracks first
-      this.remoteStream.getTracks().forEach(t => {
-        if (t.readyState === 'ended') {
-          this.remoteStream!.removeTrack(t)
-        }
-      })
-
-      // Add track if not exists
-      const exists = this.remoteStream.getTracks().some(t => t.id === event.track.id)
-      if (!exists) {
-        this.remoteStream.addTrack(event.track)
-      }
+      tracks.push(event.track)
+      this.remoteStream = new MediaStream(tracks)
 
       // Listen for track ending to clean up
       event.track.onended = () => {
         console.log('[WebRTC] Remote track ended:', event.track.kind)
         if (this.remoteStream) {
-          this.remoteStream.removeTrack(event.track)
+          const liveTracks = this.remoteStream.getTracks().filter(t => t.readyState !== 'ended')
+          this.remoteStream = new MediaStream(liveTracks)
           this.emit('remotestream', this.remoteStream)
         }
       }
@@ -289,6 +288,10 @@ class WebRTCService {
 
   getConnectionState(): RTCPeerConnectionState | null {
     return this.peerConnection?.connectionState || null
+  }
+
+  getSignalingState(): RTCSignalingState | null {
+    return this.peerConnection?.signalingState || null
   }
 
   isReady(): boolean {
