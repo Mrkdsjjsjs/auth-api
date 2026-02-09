@@ -24,6 +24,23 @@ class WebRTCService {
   private eventHandlers: Map<string, EventHandler[]> = new Map()
   private pendingCandidates: RTCIceCandidateInit[] = []
   private hasRemoteDescription = false
+
+  /**
+   * Rebuild remoteStream from all live receiver tracks.
+   * Creates a new MediaStream reference so React detects the change.
+   */
+  private rebuildRemoteStream(): void {
+    if (!this.peerConnection) return
+
+    const tracks = this.peerConnection.getReceivers()
+      .map(r => r.track)
+      .filter(t => t && t.readyState === 'live')
+
+    this.remoteStream = new MediaStream(tracks)
+    console.log('[WebRTC] Remote stream rebuilt, tracks:', tracks.map(t => `${t.kind}:${t.readyState}`))
+    this.emit('remotestream', this.remoteStream)
+  }
+
   async init(iceServers: IceServer[]): Promise<void> {
     this.config = { iceServers }
     this.pendingCandidates = []
@@ -74,32 +91,21 @@ class WebRTCService {
     this.peerConnection.ontrack = (event) => {
       console.log('[WebRTC] Track received:', event.track.kind, 'id:', event.track.id)
 
-      // Build new MediaStream with all live tracks + new track
-      // New object reference forces React state update
-      const tracks: MediaStreamTrack[] = []
+      this.rebuildRemoteStream()
 
-      if (this.remoteStream) {
-        this.remoteStream.getTracks().forEach(t => {
-          if (t.readyState !== 'ended' && t.id !== event.track.id) {
-            tracks.push(t)
-          }
-        })
+      // Listen for track unmute — fires when a reused transceiver reactivates
+      // (e.g. screen share stop+restart reuses the same transceiver,
+      //  so ontrack doesn't fire again, but onunmute does)
+      event.track.onunmute = () => {
+        console.log('[WebRTC] Remote track unmuted:', event.track.kind, 'id:', event.track.id)
+        this.rebuildRemoteStream()
       }
-
-      tracks.push(event.track)
-      this.remoteStream = new MediaStream(tracks)
 
       // Listen for track ending to clean up
       event.track.onended = () => {
         console.log('[WebRTC] Remote track ended:', event.track.kind)
-        if (this.remoteStream) {
-          const liveTracks = this.remoteStream.getTracks().filter(t => t.readyState !== 'ended')
-          this.remoteStream = new MediaStream(liveTracks)
-          this.emit('remotestream', this.remoteStream)
-        }
+        this.rebuildRemoteStream()
       }
-
-      this.emit('remotestream', this.remoteStream)
     }
 
     // Get microphone
@@ -155,6 +161,9 @@ class WebRTCService {
     await this.peerConnection.setRemoteDescription(new RTCSessionDescription(sdp))
     this.hasRemoteDescription = true
     console.log('[WebRTC] Remote SDP set, type:', sdp.type)
+
+    // Rebuild remote stream in case tracks changed direction (screen share restart)
+    this.rebuildRemoteStream()
 
     // Add pending ICE candidates
     if (this.pendingCandidates.length > 0) {
