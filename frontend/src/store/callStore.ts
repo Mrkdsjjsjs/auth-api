@@ -75,16 +75,15 @@ export const useCallStore = create<CallState>((set, get) => ({
       await webrtcService.init(data.ice_servers)
       await webrtcService.createConnection()
 
-      wsService.send('call_initiate', {
-        chat_id: chatId,
-        callee_id: calleeId,
-      })
+      const { data: callData } = await callsApi.initiate(chatId, calleeId)
+      set({ callId: callData.call_id })
 
       callSoundService.startDialTone()
       set({ status: 'ringing' })
     } catch (error: any) {
       console.error('[Call] Failed to initiate:', error)
-      set({ status: 'idle', error: error.message || 'Failed to start call' })
+      const message = error.response?.data?.detail || error.message || 'Failed to start call'
+      set({ status: 'idle', error: message })
       callSoundService.stopDialTone()
     }
   },
@@ -101,7 +100,7 @@ export const useCallStore = create<CallState>((set, get) => ({
       await webrtcService.init(data.ice_servers)
       await webrtcService.createConnection()
 
-      wsService.send('call_accept', { call_id: callId })
+      await callsApi.accept(callId)
       callSoundService.playAccepted()
     } catch (error: any) {
       console.error('[Call] Failed to accept:', error)
@@ -113,7 +112,7 @@ export const useCallStore = create<CallState>((set, get) => ({
   rejectCall: (reason = 'rejected') => {
     const { callId } = get()
     if (callId) {
-      wsService.send('call_reject', { call_id: callId, reason })
+      callsApi.reject(callId, reason).catch((e) => console.error('[Call] reject error:', e))
     }
     callSoundService.stopRingtone()
     callSoundService.playEnded()
@@ -125,7 +124,7 @@ export const useCallStore = create<CallState>((set, get) => ({
   endCall: () => {
     const { callId } = get()
     if (callId) {
-      wsService.send('call_end', { call_id: callId })
+      callsApi.end(callId).catch((e) => console.error('[Call] end error:', e))
     }
     callSoundService.stopDialTone()
     callSoundService.stopRingtone()
@@ -141,7 +140,7 @@ export const useCallStore = create<CallState>((set, get) => ({
     webrtcService.setMuted(newMuted)
     set({ isMuted: newMuted })
     if (callId) {
-      wsService.send('call_mute', { call_id: callId, is_muted: newMuted })
+      callsApi.mute(callId, newMuted).catch((e) => console.error('[Call] mute error:', e))
     }
   },
 
@@ -153,13 +152,13 @@ export const useCallStore = create<CallState>((set, get) => ({
         webrtcService.stopScreenShare()
         set({ isScreenSharing: false })
         if (callId) {
-          wsService.send('call_screen_share', { call_id: callId, is_sharing: false })
+          callsApi.screenShare(callId, false).catch((e) => console.error('[Call] screen-share error:', e))
         }
       } else {
         await webrtcService.startScreenShare()
         set({ isScreenSharing: true })
         if (callId) {
-          wsService.send('call_screen_share', { call_id: callId, is_sharing: true })
+          callsApi.screenShare(callId, true).catch((e) => console.error('[Call] screen-share error:', e))
         }
       }
     } catch (error) {
@@ -170,14 +169,6 @@ export const useCallStore = create<CallState>((set, get) => ({
   setupCallHandlers: () => {
     // Clear any previous WebRTC event handlers to prevent accumulation
     webrtcService.offAll()
-
-    // Call initiated
-    wsService.on('call_initiated', (data) => {
-      const { status } = get()
-      if (status === 'initiating' || status === 'ringing') {
-        set({ callId: data.call_id })
-      }
-    }, true)
 
     // Incoming call
     wsService.on('call_incoming', (data) => {
@@ -207,7 +198,7 @@ export const useCallStore = create<CallState>((set, get) => ({
 
       try {
         const offer = await webrtcService.createOffer()
-        wsService.send('call_offer', { call_id: data.call_id, sdp: offer })
+        await callsApi.offer(data.call_id, offer)
       } catch (error) {
         console.error('[Call] Failed to create offer:', error)
       }
@@ -272,7 +263,7 @@ export const useCallStore = create<CallState>((set, get) => ({
         console.log('[Call] Creating answer')
         const answer = await webrtcService.createAnswer()
         console.log('[Call] Sending answer')
-        wsService.send('call_answer', { call_id: data.call_id, sdp: answer })
+        await callsApi.answer(data.call_id, answer)
       } catch (error) {
         console.error('[Call] Offer handling error:', error)
       }
@@ -334,7 +325,7 @@ export const useCallStore = create<CallState>((set, get) => ({
     webrtcService.on('icecandidate', (candidate) => {
       const { callId } = get()
       if (callId) {
-        wsService.send('call_ice_candidate', { call_id: callId, candidate })
+        callsApi.iceCandidate(callId, candidate).catch((e) => console.error('[Call] ice-candidate error:', e))
       }
     })
 
@@ -365,7 +356,7 @@ export const useCallStore = create<CallState>((set, get) => ({
             console.log('[Call] Attempting ICE restart...')
             const offer = await webrtcService.restartIce()
             if (offer && callId) {
-              wsService.send('call_offer', { call_id: callId, sdp: offer })
+              callsApi.offer(callId, offer).catch((e) => console.error('[Call] ice-restart offer error:', e))
             }
           }
         }, 2000)
@@ -376,7 +367,7 @@ export const useCallStore = create<CallState>((set, get) => ({
           const offer = await webrtcService.restartIce()
           const currentCallId = get().callId
           if (offer && currentCallId) {
-            wsService.send('call_offer', { call_id: currentCallId, sdp: offer })
+            callsApi.offer(currentCallId, offer).catch((e) => console.error('[Call] ice-restart offer error:', e))
           } else {
             // ICE restart failed, end the call
             console.log('[Call] ICE restart failed, ending call')
@@ -394,7 +385,7 @@ export const useCallStore = create<CallState>((set, get) => ({
 
       try {
         const offer = await webrtcService.createOffer()
-        wsService.send('call_offer', { call_id: callId, sdp: offer })
+        await callsApi.offer(callId, offer)
       } catch (error) {
         console.error('[Call] Renegotiation error:', error)
       }
@@ -405,7 +396,7 @@ export const useCallStore = create<CallState>((set, get) => ({
       const { callId } = get()
       set({ isScreenSharing: false })
       if (callId) {
-        wsService.send('call_screen_share', { call_id: callId, is_sharing: false })
+        callsApi.screenShare(callId, false).catch((e) => console.error('[Call] screen-share error:', e))
       }
     })
   },

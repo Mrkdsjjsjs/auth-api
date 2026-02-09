@@ -154,9 +154,27 @@ export const encryptedFilesApi = {
     api.get(`/api/encrypted-files/${fileId}/download`, { responseType: 'arraybuffer' }),
 }
 
-// Calls - WebRTC ICE servers
+// Calls - WebRTC signaling via REST
 export const callsApi = {
   getIceServers: () => api.get('/api/ice-servers'),
+  initiate: (chatId: string, calleeId: string) =>
+    api.post('/api/calls/initiate', { chat_id: chatId, callee_id: calleeId }),
+  accept: (callId: string) =>
+    api.post(`/api/calls/${callId}/accept`),
+  reject: (callId: string, reason?: string) =>
+    api.post(`/api/calls/${callId}/reject`, { reason: reason || 'rejected' }),
+  end: (callId: string) =>
+    api.post(`/api/calls/${callId}/end`),
+  offer: (callId: string, sdp: RTCSessionDescriptionInit) =>
+    api.post(`/api/calls/${callId}/offer`, { sdp }),
+  answer: (callId: string, sdp: RTCSessionDescriptionInit) =>
+    api.post(`/api/calls/${callId}/answer`, { sdp }),
+  iceCandidate: (callId: string, candidate: RTCIceCandidateInit | null) =>
+    api.post(`/api/calls/${callId}/ice-candidate`, { candidate }),
+  mute: (callId: string, isMuted: boolean) =>
+    api.post(`/api/calls/${callId}/mute`, { is_muted: isMuted }),
+  screenShare: (callId: string, isSharing: boolean) =>
+    api.post(`/api/calls/${callId}/screen-share`, { is_sharing: isSharing }),
 }
 
 export default api
