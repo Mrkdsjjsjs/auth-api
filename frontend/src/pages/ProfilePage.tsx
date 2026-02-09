@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import { useEncryptionStore } from '../store/encryptionStore'
 import { usersApi } from '../services/api'
+import { getStaticUrl } from '../utils/staticUrl'
 import { ArrowLeft, Camera, Check, X, Shield, Key, Lock, Smile } from 'lucide-react'
 
 // Emoji avatars for picker
@@ -167,15 +168,18 @@ export default function ProfilePage() {
             className="profile-avatar emoji-avatar-large"
             onClick={() => fileInputRef.current?.click()}
           >
-            {user.avatar_url?.startsWith('emoji:') ? (
-              <span className="emoji-display">{user.avatar_url.slice(6)}</span>
-            ) : user.avatar_url?.match(/\.(mp4|webm|mov)$/i) ? (
-              <video src={user.avatar_url} autoPlay loop muted playsInline className="avatar-video" />
-            ) : user.avatar_url ? (
-              <img src={user.avatar_url} alt="Avatar" />
-            ) : (
-              <span className="emoji-display">{getEmojiAvatar(user.id)}</span>
-            )}
+            {(() => {
+              const url = getStaticUrl(user.avatar_url)
+              if (url?.startsWith('emoji:')) {
+                return <span className="emoji-display">{url.slice(6)}</span>
+              } else if (url?.match(/\.(mp4|webm|mov)$/i)) {
+                return <video src={url} autoPlay loop muted playsInline className="avatar-video" />
+              } else if (url) {
+                return <img src={url} alt="Avatar" />
+              } else {
+                return <span className="emoji-display">{getEmojiAvatar(user.id)}</span>
+              }
+            })()}
             <div className="profile-avatar-overlay">
               <Camera size={24} />
             </div>

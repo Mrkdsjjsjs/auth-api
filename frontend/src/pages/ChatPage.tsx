@@ -8,6 +8,7 @@ import { usersApi, encryptedFilesApi } from '../services/api'
 import { cryptoService, base64ToUint8Array } from '../services/crypto'
 import wsService from '../services/websocket'
 import { notificationService } from '../services/notification'
+import { getStaticUrl } from '../utils/staticUrl'
 import { format } from 'date-fns'
 import { Send, Plus, LogOut, Search, MessageCircle, X, User, Lock, Unlock, ArrowLeft, Paperclip, FileIcon, Image, Music, Download, AtSign, Phone } from 'lucide-react'
 import CallModal from '../components/CallModal'
@@ -144,14 +145,15 @@ export default function ChatPage() {
   }
 
   const renderAvatar = (avatarUrl: string | null | undefined, id: string, size: 'small' | 'large' = 'small') => {
-    if (avatarUrl?.startsWith('emoji:')) {
-      return <span className={size === 'large' ? 'emoji-lg' : ''}>{avatarUrl.slice(6)}</span>
+    const url = getStaticUrl(avatarUrl)
+    if (url?.startsWith('emoji:')) {
+      return <span className={size === 'large' ? 'emoji-lg' : ''}>{url.slice(6)}</span>
     }
-    if (avatarUrl?.match(/\.(mp4|webm|mov)$/i)) {
-      return <video src={avatarUrl} autoPlay loop muted playsInline className="avatar-img" />
+    if (url?.match(/\.(mp4|webm|mov)$/i)) {
+      return <video src={url} autoPlay loop muted playsInline className="avatar-img" />
     }
-    if (avatarUrl) {
-      return <img src={avatarUrl} alt="" className="avatar-img" />
+    if (url) {
+      return <img src={url} alt="" className="avatar-img" />
     }
     return getEmojiAvatar(id)
   }
@@ -732,15 +734,18 @@ export default function ChatPage() {
 
             <div className="profile-modal-content">
               <div className="profile-modal-avatar emoji-avatar">
-                {profileUser.avatar_url?.startsWith('emoji:') ? (
-                  <span style={{ fontSize: 48 }}>{profileUser.avatar_url.slice(6)}</span>
-                ) : profileUser.avatar_url?.match(/\.(mp4|webm|mov)$/i) ? (
-                  <video src={profileUser.avatar_url} autoPlay loop muted playsInline className="avatar-img" />
-                ) : profileUser.avatar_url ? (
-                  <img src={profileUser.avatar_url} alt="" className="avatar-img" />
-                ) : (
-                  <span style={{ fontSize: 48 }}>{getEmojiAvatar(profileUser.id)}</span>
-                )}
+                {(() => {
+                  const url = getStaticUrl(profileUser.avatar_url)
+                  if (url?.startsWith('emoji:')) {
+                    return <span style={{ fontSize: 48 }}>{url.slice(6)}</span>
+                  } else if (url?.match(/\.(mp4|webm|mov)$/i)) {
+                    return <video src={url} autoPlay loop muted playsInline className="avatar-img" />
+                  } else if (url) {
+                    return <img src={url} alt="" className="avatar-img" />
+                  } else {
+                    return <span style={{ fontSize: 48 }}>{getEmojiAvatar(profileUser.id)}</span>
+                  }
+                })()}
               </div>
 
               <div className="profile-modal-name">

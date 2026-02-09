@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import { useChatStore } from '../store/chatStore'
 import { usersApi } from '../services/api'
+import { getStaticUrl } from '../utils/staticUrl'
 import { ArrowLeft, MessageCircle, AtSign } from 'lucide-react'
 
 const AVATAR_EMOJIS = ['🦊', '🐼', '🦁', '🐯', '🐻', '🐨', '🐸', '🐵', '🦄', '🐲', '🦋', '🌸', '🌺', '🌻', '🍀', '⭐', '🌙', '🔥', '💎', '🎯', '🎨', '🎭', '🎪', '🎬', '🎤', '🎸', '🎹', '🎺', '🥁', '🎮']
@@ -112,15 +113,18 @@ export default function UserProfilePage() {
 
         <div className="profile-avatar-section">
           <div className="profile-avatar emoji-avatar-large">
-            {profile.avatar_url?.startsWith('emoji:') ? (
-              <span className="emoji-display">{profile.avatar_url.slice(6)}</span>
-            ) : profile.avatar_url?.match(/\.(mp4|webm|mov)$/i) ? (
-              <video src={profile.avatar_url} autoPlay loop muted playsInline className="avatar-video" />
-            ) : profile.avatar_url ? (
-              <img src={profile.avatar_url} alt="Avatar" />
-            ) : (
-              <span className="emoji-display">{getEmojiAvatar(profile.id)}</span>
-            )}
+            {(() => {
+              const url = getStaticUrl(profile.avatar_url)
+              if (url?.startsWith('emoji:')) {
+                return <span className="emoji-display">{url.slice(6)}</span>
+              } else if (url?.match(/\.(mp4|webm|mov)$/i)) {
+                return <video src={url} autoPlay loop muted playsInline className="avatar-video" />
+              } else if (url) {
+                return <img src={url} alt="Avatar" />
+              } else {
+                return <span className="emoji-display">{getEmojiAvatar(profile.id)}</span>
+              }
+            })()}
           </div>
           <div className="profile-name">
             {profile.display_name || profile.username || 'Anonymous'}

@@ -1,5 +1,6 @@
 import { useCallStore } from '../store/callStore'
 import { Phone, PhoneOff } from 'lucide-react'
+import { getStaticUrl } from '../utils/staticUrl'
 
 // Emoji avatars based on user id hash
 const AVATAR_EMOJIS = ['🦊', '🐼', '🦁', '🐯', '🐻', '🐨', '🐸', '🐵', '🦄', '🐲', '🦋', '🌸', '🌺', '🌻', '🍀', '⭐', '🌙', '🔥', '💎', '🎯', '🎨', '🎭', '🎪', '🎬', '🎤', '🎸', '🎹', '🎺', '🥁', '🎮']
@@ -29,14 +30,15 @@ export default function IncomingCallNotification() {
   }
 
   const renderAvatar = () => {
-    if (remoteUserAvatar?.startsWith('emoji:')) {
-      return <span className="avatar-emoji">{remoteUserAvatar.slice(6)}</span>
+    const url = getStaticUrl(remoteUserAvatar)
+    if (url?.startsWith('emoji:')) {
+      return <span className="avatar-emoji">{url.slice(6)}</span>
     }
-    if (remoteUserAvatar?.match(/\.(mp4|webm|mov)$/i)) {
-      return <video src={remoteUserAvatar} autoPlay loop muted playsInline className="avatar-img" />
+    if (url?.match(/\.(mp4|webm|mov)$/i)) {
+      return <video src={url} autoPlay loop muted playsInline className="avatar-img" />
     }
-    if (remoteUserAvatar) {
-      return <img src={remoteUserAvatar} alt="" className="avatar-img" />
+    if (url) {
+      return <img src={url} alt="" className="avatar-img" />
     }
     return <span className="avatar-emoji">{getEmojiAvatar(remoteUserId || 'unknown')}</span>
   }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useCallStore } from '../store/callStore'
 import { PhoneOff, Mic, MicOff, Monitor, MonitorOff, Maximize, Minimize } from 'lucide-react'
 import webrtcService from '../services/webrtc'
+import { getStaticUrl } from '../utils/staticUrl'
 
 // Emoji avatars based on user id hash
 const AVATAR_EMOJIS = ['🦊', '🐼', '🦁', '🐯', '🐻', '🐨', '🐸', '🐵', '🦄', '🐲', '🦋', '🌸', '🌺', '🌻', '🍀', '⭐', '🌙', '🔥', '💎', '🎯', '🎨', '🎭', '🎪', '🎬', '🎤', '🎸', '🎹', '🎺', '🥁', '🎮']
@@ -187,14 +188,15 @@ export default function CallModal({ remoteUserName, remoteUserAvatar, remoteUser
   }
 
   const renderAvatar = () => {
-    if (avatarUrl?.startsWith('emoji:')) {
-      return <span className="call-avatar-emoji">{avatarUrl.slice(6)}</span>
+    const url = getStaticUrl(avatarUrl)
+    if (url?.startsWith('emoji:')) {
+      return <span className="call-avatar-emoji">{url.slice(6)}</span>
     }
-    if (avatarUrl?.match(/\.(mp4|webm|mov)$/i)) {
-      return <video src={avatarUrl} autoPlay loop muted playsInline className="call-avatar-img" />
+    if (url?.match(/\.(mp4|webm|mov)$/i)) {
+      return <video src={url} autoPlay loop muted playsInline className="call-avatar-img" />
     }
-    if (avatarUrl) {
-      return <img src={avatarUrl} alt="" className="call-avatar-img" />
+    if (url) {
+      return <img src={url} alt="" className="call-avatar-img" />
     }
     return <span className="call-avatar-emoji">{getEmojiAvatar(oderId)}</span>
   }
