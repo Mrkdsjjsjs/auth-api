@@ -27,6 +27,8 @@ interface CallState {
   isRemoteScreenSharing: boolean
   callDuration: number
   error: string | null
+  remoteStream: MediaStream | null
+  localScreenStream: MediaStream | null
 
   initiateCall: (chatId: string, calleeId: string) => Promise<void>
   acceptCall: () => Promise<void>
@@ -70,6 +72,8 @@ export const useCallStore = create<CallState>((set, get) => ({
   isRemoteScreenSharing: false,
   callDuration: 0,
   error: null,
+  remoteStream: null,
+  localScreenStream: null,
 
   initiateCall: async (chatId: string, calleeId: string) => {
     try {
@@ -177,6 +181,31 @@ export const useCallStore = create<CallState>((set, get) => ({
     isProcessingOffer = false
     isProcessingAnswer = false
 
+    // ============== WebRTC media stream handlers ==============
+    // These MUST be in setupCallHandlers (not in CallModal)
+    // because offAll() above clears all webrtc handlers.
+
+    webrtcService.on('remotestream', (stream: MediaStream) => {
+      console.log('[CallStore] Remote stream updated, tracks:', stream.getTracks().map((t: MediaStreamTrack) => `${t.kind}:${t.readyState}`))
+      set({ remoteStream: stream })
+    })
+
+    webrtcService.on('screenshare', (stream: MediaStream) => {
+      console.log('[CallStore] Local screen share stream')
+      set({ localScreenStream: stream })
+    })
+
+    webrtcService.on('screenshareended', () => {
+      const { callId } = get()
+      console.log('[CallStore] Screen share ended')
+      set({ isScreenSharing: false, localScreenStream: null })
+      if (callId) {
+        callsApi.screenShare(callId, false).catch((e) => console.error('[Call] screen-share error:', e))
+      }
+    })
+
+    // ============== WS call event handlers ==============
+
     // Incoming call
     wsService.on('call_incoming', (data) => {
       const { status } = get()
@@ -197,7 +226,6 @@ export const useCallStore = create<CallState>((set, get) => ({
     // Call accepted — only process once (guard against duplicate WS)
     wsService.on('call_accepted', async (data) => {
       const { isInitiator, status } = get()
-      // Strict guard: only from 'ringing' state (set() to 'connecting' is synchronous)
       if (!isInitiator || status !== 'ringing') return
 
       set({ status: 'connecting' })
@@ -242,20 +270,18 @@ export const useCallStore = create<CallState>((set, get) => ({
       get().reset()
     }, true)
 
-    // Offer received (initial or renegotiation) — guarded against duplicates
+    // Offer received — guarded against duplicates
     wsService.on('call_offer', async (data) => {
       const { callId } = get()
 
       if (!callId || callId !== data.call_id) return
 
-      // Prevent concurrent offer processing (duplicate WS messages)
       if (isProcessingOffer) {
         console.log('[Call] Skipping duplicate offer')
         return
       }
       isProcessingOffer = true
 
-      // Wait for connection
       let tries = 0
       while (!webrtcService.isReady() && tries < 30) {
         await new Promise((r) => setTimeout(r, 100))
@@ -285,13 +311,11 @@ export const useCallStore = create<CallState>((set, get) => ({
 
       if (!callId || callId !== data.call_id) return
 
-      // Prevent concurrent answer processing (duplicate WS messages)
       if (isProcessingAnswer) {
         console.log('[Call] Skipping duplicate answer')
         return
       }
 
-      // Only process answer when we're waiting for one
       const sigState = webrtcService.getSignalingState()
       if (sigState !== 'have-local-offer') {
         console.log('[Call] Ignoring answer - signaling state:', sigState)
@@ -325,7 +349,7 @@ export const useCallStore = create<CallState>((set, get) => ({
       set({ isRemoteMuted: data.is_muted })
     }, true)
 
-    // Screen share status
+    // Screen share status from remote
     wsService.on('call_screen_share', (data) => {
       set({ isRemoteScreenSharing: data.is_sharing })
     }, true)
@@ -341,7 +365,8 @@ export const useCallStore = create<CallState>((set, get) => ({
       setTimeout(() => get().reset(), 3000)
     }, true)
 
-    // WebRTC: ICE candidate
+    // ============== WebRTC signaling handlers ==============
+
     webrtcService.on('icecandidate', (candidate) => {
       const { callId } = get()
       if (callId) {
@@ -349,12 +374,10 @@ export const useCallStore = create<CallState>((set, get) => ({
       }
     })
 
-    // WebRTC: Connection state
     webrtcService.on('connectionstatechange', (state) => {
       const { status, callId } = get()
 
       if (state === 'connected') {
-        // Clear any reconnect timeout
         if (reconnectTimeout) {
           clearTimeout(reconnectTimeout)
           reconnectTimeout = null
@@ -367,7 +390,6 @@ export const useCallStore = create<CallState>((set, get) => ({
           }, 1000)
         }
       } else if (state === 'disconnected' && status === 'active') {
-        // Connection temporarily lost - try ICE restart after a short delay
         console.log('[Call] Connection disconnected, will attempt ICE restart...')
         if (reconnectTimeout) clearTimeout(reconnectTimeout)
         reconnectTimeout = setTimeout(async () => {
@@ -381,7 +403,6 @@ export const useCallStore = create<CallState>((set, get) => ({
           }
         }, 2000)
       } else if (state === 'failed' && status === 'active') {
-        // Connection failed - attempt ICE restart immediately
         console.log('[Call] Connection failed, attempting ICE restart...')
         ;(async () => {
           const offer = await webrtcService.restartIce()
@@ -389,7 +410,6 @@ export const useCallStore = create<CallState>((set, get) => ({
           if (offer && currentCallId) {
             callsApi.offer(currentCallId, offer).catch((e) => console.error('[Call] ice-restart offer error:', e))
           } else {
-            // ICE restart failed, end the call
             console.log('[Call] ICE restart failed, ending call')
             get().endCall()
           }
@@ -397,7 +417,7 @@ export const useCallStore = create<CallState>((set, get) => ({
       }
     })
 
-    // WebRTC: Renegotiation (for screen share)
+    // Renegotiation (for screen share)
     webrtcService.on('needsrenegotiation', async () => {
       const { callId } = get()
       if (!callId) return
@@ -407,15 +427,6 @@ export const useCallStore = create<CallState>((set, get) => ({
         await callsApi.offer(callId, offer)
       } catch (error) {
         console.error('[Call] Renegotiation error:', error)
-      }
-    })
-
-    // WebRTC: Screen share ended (by user clicking browser's stop button)
-    webrtcService.on('screenshareended', () => {
-      const { callId } = get()
-      set({ isScreenSharing: false })
-      if (callId) {
-        callsApi.screenShare(callId, false).catch((e) => console.error('[Call] screen-share error:', e))
       }
     })
   },
@@ -435,6 +446,8 @@ export const useCallStore = create<CallState>((set, get) => ({
       isRemoteScreenSharing: false,
       callDuration: 0,
       error: null,
+      remoteStream: null,
+      localScreenStream: null,
     })
   },
 }))
