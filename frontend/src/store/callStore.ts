@@ -39,6 +39,18 @@ interface CallState {
 }
 
 let durationInterval: NodeJS.Timeout | null = null
+let reconnectTimeout: NodeJS.Timeout | null = null
+
+function clearTimers() {
+  if (durationInterval) {
+    clearInterval(durationInterval)
+    durationInterval = null
+  }
+  if (reconnectTimeout) {
+    clearTimeout(reconnectTimeout)
+    reconnectTimeout = null
+  }
+}
 
 export const useCallStore = create<CallState>((set, get) => ({
   status: 'idle',
@@ -106,6 +118,7 @@ export const useCallStore = create<CallState>((set, get) => ({
     callSoundService.stopRingtone()
     callSoundService.playEnded()
     webrtcService.close()
+    clearTimers()
     get().reset()
   },
 
@@ -118,11 +131,7 @@ export const useCallStore = create<CallState>((set, get) => ({
     callSoundService.stopRingtone()
     callSoundService.playEnded()
     webrtcService.close()
-
-    if (durationInterval) {
-      clearInterval(durationInterval)
-      durationInterval = null
-    }
+    clearTimers()
     get().reset()
   },
 
@@ -159,6 +168,9 @@ export const useCallStore = create<CallState>((set, get) => ({
   },
 
   setupCallHandlers: () => {
+    // Clear any previous WebRTC event handlers to prevent accumulation
+    webrtcService.offAll()
+
     // Call initiated
     wsService.on('call_initiated', (data) => {
       const { status } = get()
@@ -206,6 +218,7 @@ export const useCallStore = create<CallState>((set, get) => ({
       callSoundService.stopDialTone()
       callSoundService.playEnded()
       webrtcService.close()
+      clearTimers()
       set({ error: data.reason || 'Call rejected' })
       setTimeout(() => get().reset(), 2000)
     }, true)
@@ -226,15 +239,11 @@ export const useCallStore = create<CallState>((set, get) => ({
       callSoundService.stopRingtone()
       callSoundService.playEnded()
       webrtcService.close()
-
-      if (durationInterval) {
-        clearInterval(durationInterval)
-        durationInterval = null
-      }
+      clearTimers()
       get().reset()
     }, true)
 
-    // Offer received
+    // Offer received (initial or renegotiation)
     wsService.on('call_offer', async (data) => {
       console.log('[Call] Offer received for call:', data.call_id)
       const { callId } = get()
@@ -272,15 +281,11 @@ export const useCallStore = create<CallState>((set, get) => ({
     // Answer received
     wsService.on('call_answer', async (data) => {
       console.log('[Call] Answer received for call:', data.call_id)
-      const { callId, isInitiator } = get()
-      console.log('[Call] Our callId:', callId, 'isInitiator:', isInitiator)
+      const { callId } = get()
+      console.log('[Call] Our callId:', callId)
 
       if (!callId || callId !== data.call_id) {
         console.log('[Call] Ignoring answer - callId mismatch')
-        return
-      }
-      if (!isInitiator) {
-        console.log('[Call] Ignoring answer - not initiator')
         return
       }
 
@@ -320,6 +325,7 @@ export const useCallStore = create<CallState>((set, get) => ({
       callSoundService.stopDialTone()
       callSoundService.stopRingtone()
       webrtcService.close()
+      clearTimers()
       set({ status: 'ended', error: data.error })
       setTimeout(() => get().reset(), 3000)
     }, true)
@@ -334,33 +340,67 @@ export const useCallStore = create<CallState>((set, get) => ({
 
     // WebRTC: Connection state
     webrtcService.on('connectionstatechange', (state) => {
+      const { status, callId } = get()
+
       if (state === 'connected') {
+        // Clear any reconnect timeout
+        if (reconnectTimeout) {
+          clearTimeout(reconnectTimeout)
+          reconnectTimeout = null
+        }
+
         set({ status: 'active' })
         if (!durationInterval) {
           durationInterval = setInterval(() => {
             set((s) => ({ callDuration: s.callDuration + 1 }))
           }, 1000)
         }
+      } else if (state === 'disconnected' && status === 'active') {
+        // Connection temporarily lost - try ICE restart after a short delay
+        console.log('[Call] Connection disconnected, will attempt ICE restart...')
+        if (reconnectTimeout) clearTimeout(reconnectTimeout)
+        reconnectTimeout = setTimeout(async () => {
+          const currentState = webrtcService.getConnectionState()
+          if (currentState === 'disconnected' || currentState === 'failed') {
+            console.log('[Call] Attempting ICE restart...')
+            const offer = await webrtcService.restartIce()
+            if (offer && callId) {
+              wsService.send('call_offer', { call_id: callId, sdp: offer })
+            }
+          }
+        }, 2000)
+      } else if (state === 'failed' && status === 'active') {
+        // Connection failed - attempt ICE restart immediately
+        console.log('[Call] Connection failed, attempting ICE restart...')
+        ;(async () => {
+          const offer = await webrtcService.restartIce()
+          const currentCallId = get().callId
+          if (offer && currentCallId) {
+            wsService.send('call_offer', { call_id: currentCallId, sdp: offer })
+          } else {
+            // ICE restart failed, end the call
+            console.log('[Call] ICE restart failed, ending call')
+            get().endCall()
+          }
+        })()
       }
     })
 
     // WebRTC: Renegotiation (for screen share)
+    // Either side can trigger renegotiation
     webrtcService.on('needsrenegotiation', async () => {
-      const { callId, isInitiator } = get()
+      const { callId } = get()
       if (!callId) return
 
-      // Only initiator sends offers, callee waits
-      if (isInitiator) {
-        try {
-          const offer = await webrtcService.createOffer()
-          wsService.send('call_offer', { call_id: callId, sdp: offer })
-        } catch (error) {
-          console.error('[Call] Renegotiation error:', error)
-        }
+      try {
+        const offer = await webrtcService.createOffer()
+        wsService.send('call_offer', { call_id: callId, sdp: offer })
+      } catch (error) {
+        console.error('[Call] Renegotiation error:', error)
       }
     })
 
-    // WebRTC: Screen share ended
+    // WebRTC: Screen share ended (by user clicking browser's stop button)
     webrtcService.on('screenshareended', () => {
       const { callId } = get()
       set({ isScreenSharing: false })
